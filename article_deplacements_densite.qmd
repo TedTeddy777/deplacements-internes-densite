@@ -1,0 +1,1973 @@
+---
+title: "Déplacements internes et densité de population en Haïti"
+subtitle: "Corriger les populations communales des déplacements et mesurer leur association avec la violence des gangs"
+author:
+  - "Ridge Jean-Baptiste"
+  - "Woodnalie Saviola Joseph"
+date: today
+date-format: "D MMMM YYYY"
+lang: fr
+bibliography: references.bib
+link-citations: true
+filters:
+  - filtres/garder-tableaux.lua
+crossref:
+  tbl-title: "Tableau"
+  tbl-prefix: "tableau"
+  fig-prefix: "figure"
+  sec-prefix: "section"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: none
+    html-math-method: mathjax
+    css: industry.css
+    fig-caption: true
+    embed-resources: true
+  pdf:
+    output-file: article_deplacements_densite_V_2.1   # version dans le nom du PDF
+    pdf-engine: xelatex
+    mainfont: Cambria         # la police par défaut n'a pas les signes ≤ et ≥
+    sansfont: "Segoe UI"      # titres, comme dans les graphiques
+    papersize: a4
+    template-partials:
+      - partials/before-body.tex   # page de couverture avec image en arrière-plan
+    toc: true
+    toc-depth: 2
+    toc-title: "Sommaire"
+    number-sections: true
+    geometry: margin=2.5cm
+    fontsize: 11pt
+    linestretch: 1.15
+    fig-pos: "H"                # figures à l'endroit exact de leur appel (paquet float)
+    include-in-header:
+      text: |
+        \usepackage{needspace}
+        \usepackage{tikz}
+        \usepackage[skins,breakable]{tcolorbox}
+        \usepackage{float}
+        \definecolor{couvrouge}{HTML}{E34948}
+        \definecolor{couvencre}{HTML}{0B0B0B}
+        \definecolor{couvgris}{HTML}{52514E}
+        % sommaire tenu sur une page : moins d'espace avant les entrées de premier niveau
+        \usepackage{etoolbox}
+        \makeatletter\patchcmd{\l@section}{1.0em}{0.15em}{}{}\makeatother
+        % listes à tirets courts ; pas d'étirement vertical des pages
+        \frenchsetup{ItemLabels=\textendash}
+        \raggedbottom
+        % légendes : la partie « notes » (\horsliste) n'apparaît pas dans les listes des tableaux et des figures
+        \newif\ifdanslistes
+        \DeclareRobustCommand{\horsliste}[1]{\ifdanslistes\else#1\fi}
+        % tableau court gardé d'un seul tenant (appelé par filtres/garder-tableaux.lua) : saut de page avant le tableau
+        % si la place manque ; la pénalité nulle met à jour \pagetotal sans attirer la coupure
+        \makeatletter
+        \newcommand{\gardertableau}[1]{\par\penalty\z@\begingroup\setlength{\dimen@}{#1}%
+          \dimen@ii\pagegoal\advance\dimen@ii-\pagetotal
+          \ifdim\dimen@>\dimen@ii\ifdim\dimen@ii>\z@\vfil\fi\penalty-\@M\fi\endgroup}
+        \makeatother
+        % tableaux en \small (légendes en taille normale)
+        \AtBeginEnvironment{longtable}{\small}
+        \AtBeginDocument{\captionsetup[table]{font=normalsize}}
+        % longtable recopie sa légende (et son entrée) à chaque page : à la lecture de la liste des tableaux,
+        % seule la première entrée de chaque numéro est gardée
+        \makeatletter
+        \newcommand{\listetableaux}{\begingroup
+          \let\lot@contentsline\contentsline
+          \renewcommand{\contentsline}[4]{%
+            \begingroup\def\numberline####1{\gdef\lot@num{####1}}\setbox0\hbox{##2}\endgroup
+            \ifcsname lotvu@\lot@num\endcsname\else
+              \expandafter\gdef\csname lotvu@\lot@num\endcsname{}\lot@contentsline{##1}{##2}{##3}{##4}%
+            \fi}%
+          \listoftables\endgroup}
+        \makeatother
+        % cadres (résumé, abstract, encadré) : fond, bordure, titre à cheval sur le filet supérieur
+        \definecolor{cadre}{HTML}{2E3A4B}
+        \definecolor{fondcadre}{HTML}{F3F5F8}
+        \tcbset{cadrepro/.style={enhanced, breakable, colback=fondcadre, colframe=cadre, boxrule=0.6pt, arc=2pt, outer arc=2pt,
+          left=11pt, right=11pt, top=13pt, bottom=9pt, before skip=18pt, after skip=14pt,
+          fonttitle=\sffamily\bfseries\small, coltitle=white,
+          attach boxed title to top left={xshift=12pt, yshift=-\tcboxedtitleheight/2},
+          boxed title style={colback=cadre, colframe=cadre, boxrule=0pt, arc=1.5pt, left=7pt, right=7pt, top=2.5pt, bottom=2.5pt},
+          fontupper=\small, before upper={\setlength{\parskip}{0.45\baselineskip}}}}
+        \newtcolorbox{encadre}[1]{cadrepro, title={#1}}
+        \newtcolorbox{cadreresume}[1]{cadrepro, title={#1}}
+    colorlinks: true
+    linkcolor: "NavyBlue"
+    citecolor: "NavyBlue"
+    urlcolor: "NavyBlue"
+execute:
+  echo: false
+  warning: false
+  message: false
+knitr:
+  opts_chunk:
+    fig.align: "center"
+    dev: "ragg_png"
+    fig.width: 6.5
+engine: knitr
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+suppressPackageStartupMessages({
+  library(data.table); library(sf); library(ggplot2); library(patchwork); library(ggrepel)
+  library(spdep); library(spatialreg); library(splm); library(fixest); library(SDPDmod); library(plm)
+})
+sf_use_s2(FALSE)
+set.seed(20261116)
+# Figures vectorielles dans le PDF, PNG (ragg) dans le HTML
+knitr::opts_chunk$set(dev = if (knitr::is_latex_output()) "cairo_pdf" else "ragg_png", dpi = 200)
+
+fmt <- function(x, d = 0) {                      # d < 0 : arrondi à la dizaine, centaine...
+  if (d < 0) { x <- round(x, d); d <- 0 }
+  x <- unname(x); x[!is.na(x) & abs(x) < 0.5 * 10^-d] <- 0
+  sub("^-", "−", formatC(x, format = "f", digits = d, big.mark = "\u00a0", decimal.mark = ","))   # espaces insécables
+}
+pc      <- function(x, d = 1) paste0(fmt(100 * x, d), "\u00a0%")
+etoiles <- function(p) as.character(cut(p, c(-Inf, 0.01, 0.05, 0.1, Inf), c("***", "**", "*", "")))
+fmt_p   <- function(p) ifelse(p < 0.001, "<\u00a00,001", fmt(p, 3))
+p_txt   <- function(p) ifelse(p < 0.001, "p\u00a0<\u00a00,001", paste0("p\u00a0=\u00a0", fmt(p, 3)))
+millions <- function(x, d = 2) paste(fmt(x / 1e6, d), if (x >= 2e6) "millions" else "million")
+ic <- function(x, d = 2) paste0(fmt(quantile(x, 0.5), d), " [", fmt(quantile(x, 0.05), d), " ; ", fmt(quantile(x, 0.95), d), "]")
+mois_fr <- c("janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+             "août", "septembre", "octobre", "novembre", "décembre")
+mois_an <- function(d) paste(mois_fr[as.integer(format(d, "%m"))], format(d, "%Y"))
+liste_fr <- function(x) if (length(x) <= 1) x else paste(paste(head(x, -1), collapse = ", "), "et", tail(x, 1))
+sgn <- function(v) paste0(ifelse(round(v) > 0, "+", ""), fmt(v, 0), "\u00a0%")
+en_lettres <- function(n) { l <- c("un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf")
+  ifelse(n >= 1 & n <= 9 & n == round(n), l[pmax(1, pmin(9, n))], fmt(n)) }
+
+# Charte graphique : palette de référence, police unique, titres et sources dans la figure
+POLICE <- "Segoe UI"
+INK <- "#0b0b0b"; INK2 <- "#52514e"; MUET <- "#898781"; GRILLE <- "#e1e0d9"; AXE <- "#c3c2b7"; FOND_SOL <- "#f0efec"
+BLEU <- "#2a78d6"; ORANGE <- "#eb6834"; AQUA <- "#1baf7a"; ROUGE <- "#e34948"
+DIV  <- c("#b4282a", "#e34948", "#f4a9a7", "#f0efec", "#9ec5f4", "#3987e5", "#184f95")   # divergente : pertes / gains
+theme_art <- theme_minimal(base_size = 9, base_family = POLICE) + theme(
+  panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
+  panel.grid.major.y = element_line(colour = GRILLE, linewidth = 0.3),
+  axis.line.x = element_line(colour = AXE, linewidth = 0.4),
+  axis.ticks.x = element_line(colour = AXE, linewidth = 0.4), axis.ticks.length = unit(2.5, "pt"),
+  axis.text = element_text(colour = INK2, size = 7.5), axis.title = element_text(colour = INK2, size = 8),
+  plot.title = element_text(colour = INK, face = "bold", size = 9, margin = margin(b = 2)),
+  plot.subtitle = element_text(colour = INK2, size = 8, margin = margin(b = 6)),
+  plot.title.position = "plot", plot.caption.position = "plot",
+  plot.caption = element_text(colour = MUET, size = 7, hjust = 0, margin = margin(t = 8)),
+  legend.position = "top", legend.justification = "left", legend.margin = margin(0, 0, 0, 0),
+  legend.title = element_text(colour = INK2, size = 8), legend.text = element_text(colour = INK2, size = 7.5),
+  plot.margin = margin(4, 8, 4, 4), plot.background = element_rect(fill = "white", colour = NA))
+theme_carte <- theme_void(base_size = 9, base_family = POLICE) + theme(
+  legend.position = "inside", legend.position.inside = c(0, 1), legend.justification = c(0, 1),
+  legend.title = element_text(colour = INK, size = 7.8, face = "bold", margin = margin(b = 4)),
+  legend.text = element_text(colour = INK2, size = 7.2), legend.key.size = unit(9, "pt"),
+  legend.key.spacing.y = unit(1.5, "pt"),
+  plot.caption = element_text(colour = MUET, size = 7, hjust = 0, margin = margin(t = 4)),
+  plot.caption.position = "plot", plot.margin = margin(2, 2, 2, 2),
+  plot.background = element_rect(fill = "white", colour = NA))
+theme_set(theme_art)
+update_geom_defaults("text", list(family = POLICE, colour = INK2))
+SRC_DTM <- "Sources : OIM, DTM (round 14, juillet 2026) ; IHSI ; OCHA COD-AB. Calculs des auteurs."
+SRC_GRI <- "Sources : OIM, DTM (round 14, juillet 2026) ; IHSI ; WorldPop R2025A. Calculs des auteurs."
+SRC_MOD <- "Sources : OIM, DTM (round 14, juillet 2026) ; UCDP ; IHSI ; OCHA COD-AB. Calculs des auteurs."
+
+# Fond de carte commun (dep_u, bb et villes sont calculés au chargement des données)
+couche_dep <- function() geom_sf(data = dep_u, fill = NA, colour = "#6f6e69", linewidth = 0.3)
+couche_villes <- function(d = villes) list(
+  geom_point(data = d, aes(x, y), shape = 21, size = 1.2, fill = INK, colour = "white", stroke = 0.35),
+  geom_text_repel(data = d, aes(x, y, label = commune), family = POLICE, size = 2.5, colour = INK,
+                  bg.colour = "white", bg.r = 0.12, box.padding = 0.18, point.padding = 0.15,
+                  min.segment.length = Inf, seed = 3))
+echelle <- function(km = 50, fx = 0.36, fy = 0.02) {       # barre d'échelle sur la côte sud
+  x0 <- bb[["xmin"]] + fx * (bb[["xmax"]] - bb[["xmin"]]); y0 <- bb[["ymin"]] + fy * (bb[["ymax"]] - bb[["ymin"]])
+  h <- 0.008 * (bb[["ymax"]] - bb[["ymin"]]); m <- km * 500
+  list(annotate("rect", xmin = x0, xmax = x0 + m, ymin = y0, ymax = y0 + h, fill = INK2, colour = INK2, linewidth = 0.2),
+       annotate("rect", xmin = x0 + m, xmax = x0 + 2 * m, ymin = y0, ymax = y0 + h, fill = "white", colour = INK2, linewidth = 0.2),
+       annotate("text", x = c(x0, x0 + m, x0 + 2 * m), y = y0 + 1.8 * h, label = c("0", km / 2, paste(km, "km")),
+                size = 2.4, colour = INK2, vjust = 0, family = POLICE))
+}
+coord_carte <- function() coord_sf(crs = 32618, datum = NA, expand = FALSE,
+                                   xlim = bb[c("xmin", "xmax")] + c(-2e3, 2e3), ylim = bb[c("ymin", "ymax")] + c(-2e3, 2e3))
+```
+
+```{r}
+#| label: donnees
+#| include: false
+
+D <- "data"
+if (!file.exists(file.path(D, "sections.rds")))
+  stop("Exécuter d'abord scripts/01_preparation_donnees.R")
+if (!file.exists(file.path(D, "ihsi_communes.rds")))
+  stop("Exécuter d'abord scripts/02_ihsi_population.R")
+com     <- readRDS(file.path(D, "communes.rds")); com <- com[order(com$pcode), ]
+com$commune <- sub("Croix-Des-Bouquets", "Croix-des-Bouquets", com$commune)
+com_u   <- st_transform(com, 32618)
+sec     <- readRDS(file.path(D, "sections.rds"))
+panel   <- readRDS(file.path(D, "dtm_panel.rds"))
+nat     <- readRDS(file.path(D, "dtm_national.rds"))
+flux    <- readRDS(file.path(D, "flux_od.rds"))
+loc     <- readRDS(file.path(D, "dtm_localites.rds"))
+ucdp    <- readRDS(file.path(D, "ucdp_communes_mois.rds"))   # violence géolocalisée, par commune et par mois
+ucdp_ev <- readRDS(file.path(D, "ucdp_evenements.rds"))      # événements UCDP (Haïti)
+grille  <- readRDS(file.path(D, "grille_1km.rds"))
+ihsi    <- readRDS(file.path(D, "ihsi_communes.rds"))       # estimations officielles de l'IHSI, 2015 et 2024
+ihsi_s  <- readRDS(file.path(D, "ihsi_sections.rds"))       # sections communales, IHSI 2015
+cd      <- as.data.table(st_drop_geometry(com))
+cd      <- merge(cd, ihsi[, .(pcode, pop_2015, pop_2024, km2_ihsi = km2_2024)], by = "pcode")[order(pcode)]
+# Population de base, avant les déplacements : structure communale de 2015 de l'IHSI, portée au total
+# national de 2024 de l'IHSI. C'est l'estimation officielle de 2024 sans son ajustement aux déplacés, que la
+# correction prend en charge. Les densités communales utilisent les superficies de l'IHSI.
+K_REF <- sum(ihsi$pop_2024) / sum(ihsi$pop_2015)
+cd[, pop0 := pop_2015 * K_REF]
+# Grille de 1 km : WorldPop ne sert qu'à répartir la population de base de chaque commune entre ses km²
+grille[, pop_wp := pop]
+f_com <- merge(grille[, .(wp = sum(pop_wp)), by = pcode], cd[, .(pcode, pop0)], by = "pcode")[, .(pcode, fc = pop0 / wp)]
+grille[, pop := pop_wp * f_com$fc[match(pcode, f_com$pcode)]]
+grille[!is.finite(pop), pop := pop_wp * K_REF]
+# Sections communales : population de base = somme de la grille. Les estimations de l'IHSI par section
+# s'écartent trop de la répartition de WorldPop pour être combinées avec la grille (voir S0$r_sec).
+sec_ref <- grille[, .(pop0_s = sum(pop)), by = section]
+r_sec <- merge(sec_ref, ihsi_s[, .(section, ihsi_s = pop_2015 * K_REF)], by = "section")[pop0_s > 0, ihsi_s / pop0_s]
+S0 <- list(grille_part = sum(grille$pop) / sum(cd$pop0), r_sec = quantile(r_sec, c(0.05, 0.5, 0.95)))
+dep_u   <- do.call(rbind, lapply(split(com_u, com_u$dep_pcode), function(d)
+             st_sf(dep = d$dep_pcode[1], geometry = st_union(st_buffer(d, 30)))))   # limites départementales
+bb      <- st_bbox(com_u)
+villes  <- cd[pcode %in% c("HT0111", "HT0311", "HT0511", "HT0711", "HT0211", "HT0811", "HT0611", "HT0911", "HT0621"),
+              .(commune, x = xp_km * 1e3, y = yp_km * 1e3)]
+ZM_NOMS <- cd[zmpp == TRUE][order(-pop0), commune]   # zone métropolitaine (définition de la DTM)
+
+# Round retenu pour les flux : round 14 (juillet 2026), dernier round publié en détail
+R_OD <- 14; DATE_OD <- as.IDate("2026-07-31")
+f_ref <- flux[round == R_OD]
+l_ref <- loc[round == R_OD]
+
+# Départs, arrivées et déplacés restés dans leur commune, à partir d'une matrice de flux
+soldes <- function(f) {
+  dep   <- f[origine != destination, .(depart = sum(pdi)), by = .(pcode = origine)]
+  arr   <- f[origine != destination, .(arrivee = sum(pdi)), by = .(pcode = destination)]
+  intra <- f[origine == destination, .(intra = sum(pdi)), by = .(pcode = origine)]
+  x <- Reduce(function(a, b) merge(a, b, by = "pcode", all.x = TRUE), list(cd[, .(pcode)], dep, arr, intra))
+  for (v in c("depart", "arrivee", "intra")) set(x, which(is.na(x[[v]])), v, 0)
+  x[order(pcode)]
+}
+s_ref <- soldes(f_ref)
+cd  <- merge(cd, s_ref, by = "pcode")
+cd[, `:=`(heberge = arrivee + intra, net = arrivee - depart)]
+setorder(cd, pcode); stopifnot(identical(cd$pcode, com$pcode))
+cd[, `:=`(ldens = log(pop0 / km2_ihsi), ldist = log1p(dist_pap_km))]
+ll_ <- st_coordinates(st_transform(st_point_on_surface(st_geometry(com_u)), 4326)); cd[, `:=`(lon = ll_[, 1], lat = ll_[, 2])]
+
+# Matrices de voisinage, normalisées en ligne (chaque ligne somme à 1)
+xy <- st_coordinates(st_point_on_surface(st_geometry(com_u)))
+voisins <- function(k) nb2listw(knn2nb(knearneigh(xy, k = k)), style = "W")
+W  <- voisins(6)                                                                       # matrice principale
+nbq <- make.sym.nb(union.nb(poly2nb(com_u, queen = TRUE, snap = 50), knn2nb(knearneigh(xy, k = 1))))   # îles reliées
+nbd <- dnearneigh(xy, 0, 60000)
+Ws <- list("4 plus proches voisins" = voisins(4), "6 plus proches voisins (principale)" = W,
+           "8 plus proches voisins" = voisins(8), "Contiguïté (reine)" = nb2listw(nbq, style = "W"),
+           "Inverse de la distance (60 km)" = nb2listw(nbd, glist = lapply(nbdists(nbd, xy), function(d) 1000 / d), style = "W"))
+ev <- eigenw(W)
+Wm <- listw2mat(W)
+S <- list()
+S$iles <- cd[grepl("Tortue|Vache", commune), commune]          # îles reliées au continent par les plus proches voisins
+
+# Chiffres clés
+S$pdi0   <- nat[round == 0]$pdi_nat;  S$date0  <- nat[round == 0]$date
+S$pdi14  <- nat[round == 14]$pdi_nat; S$date14 <- nat[round == 14]$date
+S$pdi7   <- nat[round == 7]$pdi_nat;  S$date7  <- nat[round == 7]$date
+S$pdi10  <- nat[round == 10]$pdi_nat
+S$part14 <- S$pdi14 / sum(cd$pop_2024)
+S$pdi_ref  <- sum(f_ref$pdi)
+S$intra  <- f_ref[origine == destination, sum(pdi)] / S$pdi_ref
+S$inter  <- f_ref[origine != destination, sum(pdi)]
+S$n_orig <- uniqueN(f_ref[origine != destination]$origine)
+S$n_dest <- uniqueN(f_ref[origine != destination]$destination)
+S$ouest  <- cd[departement == "Ouest", sum(depart)] / sum(cd$depart)
+S$morts23 <- ucdp_ev[gang == TRUE & year(date) == 2023, sum(morts)]
+S$morts25 <- ucdp_ev[gang == TRUE & year(date) == 2025, sum(morts)]
+S$ucdp_fin <- max(ucdp_ev$date)
+odd <- merge(f_ref[!is.na(origine)], cd[, .(origine = pcode, xo = x_km, yo = y_km)], by = "origine")
+odd <- merge(odd, cd[, .(destination = pcode, xd = x_km, yd = y_km)], by = "destination")
+odd[, dist := sqrt((xd - xo)^2 + (yd - yo)^2)]
+S$dist_moy <- odd[origine != destination, sum(pdi * dist) / sum(pdi)]
+S$dist_med <- odd[origine != destination][order(dist)][, dist[which(cumsum(pdi) >= sum(pdi) / 2)[1]]]
+S$dist_moy_sg <- odd[origine != destination & !origine %in% c("HT0116", "HT0621"), sum(pdi * dist) / sum(pdi)]
+S$retournes <- l_ref[, sum(retournes)]
+S$mireb_r9  <- panel[pcode == "HT0621" & round == 9]$pdi
+# Dates de déplacement (mois) de la majorité des PDI des localités rattachées à Gressier
+gd_ <- loc[round == R_OD & origine == "HT0116"][, date := as.IDate(as.numeric(date_depl), origin = "1899-12-30")]
+part_gr <- function(cond) gd_[cond, sum(pdi)] / sum(gd_$pdi)
+S$gr_avant <- part_gr(gd_$date < as.IDate("2024-05-01"))
+S$gr_fev   <- part_gr(format(gd_$date, "%Y-%m") == "2024-02")
+S$gr_fj    <- part_gr(gd_$date >= as.IDate("2024-02-01") & gd_$date < as.IDate("2024-08-01"))
+S$gr_debut <- min(gd_$date[gd_$date >= as.IDate("2023-01-01")]); S$gr_fin <- max(gd_$date)
+# Mirebalais : part des déplacés partis en mars-avril 2025 (attaque de la ville) ; Croix-des-Bouquets : dates et accueil
+date_prov <- function(o) loc[round == R_OD & origine == o & pcode != o][, date := as.IDate(as.numeric(date_depl), origin = "1899-12-30")][]
+md_ <- date_prov("HT0621"); S$mi_mars <- md_[date >= as.IDate("2025-03-01") & date < as.IDate("2025-05-01"), sum(pdi)] / sum(md_$pdi)
+cb_ <- date_prov("HT0131"); S$cdb_av25 <- cb_[date < as.IDate("2025-01-01"), sum(pdi)] / sum(cb_$pdi)
+S$cdb_p25 <- cb_[date >= as.IDate("2025-02-01") & date < as.IDate("2025-09-01"), sum(pdi)] / sum(cb_$pdi)
+cbd_ <- merge(f_ref[origine == "HT0131" & destination != "HT0131"], cd[, .(destination = pcode, departement)], by = "destination")
+S$cdb_se <- cbd_[departement == "Sud-Est", sum(pdi)] / sum(cbd_$pdi); S$cdb_nord <- cbd_[departement == "Nord", sum(pdi)] / sum(cbd_$pdi)
+S$cdb_dl <- cbd_[destination == "HT0112", sum(pdi)] / sum(cbd_$pdi)
+# Provenance imputée des déplacés rattachés à Gressier : dans chacune de leurs communes d'accueil, répartition des déplacés
+# venus directement de la zone métropolitaine, pondérée par le nombre de déplacés rattachés à Gressier qu'elle héberge
+g_dest <- f_ref[origine == "HT0116" & destination != "HT0116", .(wg = sum(pdi)), by = destination]
+imp_ <- f_ref[origine %in% cd[zmpp == TRUE, pcode] & origine != destination & destination %in% g_dest$destination,
+            .(pdi = sum(pdi)), by = .(destination, origine)][, part := pdi / sum(pdi), by = destination]
+imp_ <- merge(imp_, g_dest, by = "destination")[, .(w = sum(part * wg)), by = origine][, w := w / sum(w)]
+S$imp <- setNames(imp_$w, imp_$origine); for (p in cd[zmpp == TRUE, pcode]) if (is.na(S$imp[p])) S$imp[p] <- 0
+S$imp_car <- S$imp[["HT0113"]] / (S$imp[["HT0113"]] + S$imp[["HT0111"]])
+# Estimations officielles (IHSI) : ajustement aux déplacements entre départements seulement
+g_dep <- cd[, .(g = sum(pop_2024) / sum(pop_2015), e = diff(range(pop_2024 / pop_2015))), by = departement]
+S$g_ouest <- g_dep[departement == "Ouest", g] - 1; S$g_sud <- g_dep[departement == "Sud", g] - 1
+S$g_nat <- sum(cd$pop_2024) / sum(cd$pop_2015) - 1
+r_wp <- (cd$wp2025 / sum(cd$wp2025)) / (cd$pop_2015 / sum(cd$pop_2015))   # WorldPop 2025 / IHSI 2015 (parts communales)
+S$wp_ecart <- quantile(abs(r_wp - 1), 0.9)
+S$zm_15 <- sum(cd$pop_2015[cd$zmpp]); S$zm_24 <- sum(cd$pop_2024[cd$zmpp]); S$zmpp_ref <- cd[zmpp == TRUE, sum(pop0)]
+```
+
+```{r}
+#| label: correction
+#| include: false
+
+# Population corrigée des déplacements (section 4)
+# cap : plafond des départs en part de la population de base (NA = déclarations brutes, populations
+# négatives ramenées à zéro) ; l'excédent est réattribué
+#  - "axes" (scénario central) : selon la cause de l'excédent (section 4.2)
+#    * Gressier, lieu de transit sur la route nationale 2 : au sud-ouest de la capitale, d'où partent les déplacés
+#      qui la traversent, au prorata des départs déclarés : Carrefour, et Port-au-Prince pour la seule part de sa
+#      population qui vit dans la section de Martissant (P_MART), la section de provenance n'étant pas connue
+#    * autres communes (Mirebalais : attribution de localités entières à la provenance majoritaire) : à toutes les
+#      communes de départ, au prorata de leurs départs, sauf les communes refuges de l'est de l'agglomération
+#      (Delmas, Tabarre, Pétion-Ville)
+#  - "axes_pap" : idem, avec tous les départs de Port-au-Prince
+#  - "axes_cdb" : idem, mais l'excédent de Mirebalais va à Croix-des-Bouquets (route nationale 3)
+#  - "zmpp_dep" : aux communes de la zone métropolitaine, au prorata de leurs départs, sauf Delmas et Pétion-Ville
+#  - "zmpp"    : aux autres communes de la zone métropolitaine, au prorata de leur population
+#  - "departs" : à toutes les autres communes de départ, au prorata de leurs départs
+#  - "aucune"  : l'excédent est traité comme un surcomptage et abandonné (borne basse de la perte)
+EXCL_REALLOC <- c("HT0112", "HT0114")             # Delmas, Pétion-Ville
+REFUGES <- c("HT0112", "HT0118", "HT0114")        # Delmas, Tabarre, Pétion-Ville
+P_MART <- ihsi_s[section == "HT0111-03", pop_2015] / ihsi_s[pcode == "HT0111", sum(pop_2015)]   # Martissant
+corriger <- function(s = s_ref, cap = 0.75, realloc = "axes") {
+  x <- merge(cd[, .(pcode, commune, pop0, km2 = km2_ihsi, zmpp)], s[, .(pcode, depart, arrivee, intra)], by = "pcode")
+  if (is.na(cap)) {
+    x[, `:=`(exces = 0, dep_c = depart)]; x[, pop_c := pmax(pop0 - dep_c + arrivee, 0)]
+  } else {
+    x[, exces := pmax(0, depart - cap * pop0)]; E <- sum(x$exces)
+    x[, dep_c := depart - exces]
+    ok <- x$exces == 0 & x$depart > 0
+    if (startsWith(realloc, "axes")) {
+      E_g <- x[pcode == "HT0116", exces]
+      w_g <- ok * x$depart * ((x$pcode == "HT0113") + (x$pcode == "HT0111") * if (realloc == "axes_pap") 1 else P_MART)
+      w_a <- ok * x$depart * !(x$pcode %in% REFUGES)
+      if (realloc == "axes_cdb" && sum(ok * (x$pcode == "HT0131")) > 0) w_a <- ok * x$depart * (x$pcode == "HT0131")
+      if (sum(w_g) == 0) w_g <- w_a
+      x[, `:=`(part_g = E_g * w_g / sum(w_g), part_m = (E - E_g) * w_a / sum(w_a))]
+      x[, dep_c := dep_c + part_g + part_m]
+    } else if (realloc != "aucune") {
+      w <- switch(realloc, zmpp = x$zmpp & x$exces == 0, zmpp_dep = ok & x$zmpp & !x$pcode %in% EXCL_REALLOC, departs = ok)
+      base <- if (realloc == "zmpp") x$pop0 else x$depart
+      x[, dep_c := dep_c + E * w * base / sum(base[w])]
+    }
+    x[, pop_c := pop0 - dep_c + arrivee]
+  }
+  x[, facteur := pop_c / pop0][order(pcode)]
+}
+# Redistribution intra-communale : les départs (y compris vers la même commune) sont retranchés au
+# prorata de la population des sections ; les déplacés sont ajoutés dans leur section d'accueil
+sd <- merge(as.data.table(st_drop_geometry(sec)), sec_ref, by = "section", all.x = TRUE)
+sd[is.na(pop0_s), pop0_s := 0]
+redistribuer <- function(x, L = l_ref) {
+  s <- merge(sd[, .(section, pcode, wp_s = pop0_s)], L[, .(heb = sum(pdi)), by = section], by = "section", all.x = TRUE)
+  s[is.na(heb), heb := 0]; s[, wp_c := sum(wp_s), by = pcode]
+  s <- merge(s, x[, .(pcode, dep_tot = dep_c + intra)], by = "pcode")
+  s[, pop_s := wp_s - dep_tot * wp_s / wp_c + heb][, fs := ifelse(wp_s > 0, pop_s / wp_s, 1)][]
+}
+gini <- function(p) { p <- sort(p); X <- c(0, seq_along(p) / length(p)); Y <- c(0, cumsum(p) / sum(p)); 1 - sum(diff(X) * (head(Y, -1) + Y[-1])) }
+grille_c <- function(x) grille$pop * x$facteur[match(grille$pcode, x$pcode)]
+indic <- function(x, gp, v = "pop_c") {
+  p <- x[[v]]
+  c(zmpp = sum(p[x$zmpp]), part_zmpp = sum(p[x$zmpp]) / sum(p), dens_pap = p[x$pcode == "HT0111"] / x$km2[x$pcode == "HT0111"],
+    km_max = max(gp), part_10k = sum(gp[gp >= 1e4]) / sum(gp), gini = gini(gp), total = sum(p),
+    accueil = sum(p[x$pcode %in% c("HT0211", "HT0711", "HT0311")]))
+}
+scen <- list(A = corriger(s_ref, NA), B = corriger(s_ref), C = corriger(s_ref, 0.75, "departs"), S = corriger(s_ref, 0.75, "aucune"))
+stopifnot(abs(sum(scen$B$pop_c) - sum(scen$B$pop0)) < 1, all(scen$B$pop_c > 0))
+gp <- lapply(scen, grille_c)
+secE <- redistribuer(scen$B)
+gp$E <- grille$pop * secE$fs[match(grille$section, secE$section)]
+I <- lapply(names(scen), function(k) indic(scen[[k]], gp[[k]])); names(I) <- names(scen)
+I$E <- indic(scen$B, gp$E)
+I$REF <- indic(scen$B, grille$pop, "pop0")
+S$exces <- sum(scen$B$exces)
+S$exces_g <- scen$B[pcode == "HT0116", exces]; S$exces_m <- S$exces - S$exces_g; S$p_mart <- P_MART
+S$g_car <- scen$B[pcode == "HT0113", part_g]; S$g_pap <- scen$B[pcode == "HT0111", part_g]
+S$m_zmpp <- scen$B[zmpp == TRUE, sum(part_m)] / S$exces_m
+S$perte_zmpp <- I$REF[["zmpp"]] - I$B[["zmpp"]]
+S$km_E_section <- sd$nom_section[match(grille$section[which.max(gp$E)], sd$section)]
+S$km_E_commune <- cd$commune[match(grille$pcode[which.max(gp$E)], cd$pcode)]
+S$secE_neg <- secE[pop_s < 0, .N]
+cd[, `:=`(dep_B = scen$B$dep_c[match(pcode, scen$B$pcode)], pop_B = scen$B$pop_c[match(pcode, scen$B$pcode)])]
+cd[, var_B := 100 * (pop_B / pop0 - 1)]
+
+# Décomposition de la perte de la zone métropolitaine (scénario central)
+zmB <- scen$B[zmpp == TRUE]
+DEC <- c(base = I$REF[["zmpp"]], ihsi15 = S$zm_15, ihsi24 = S$zm_24, dep = sum(zmB$depart), arr = sum(zmB$arrivee),
+         net = sum(zmB$depart - zmB$arrivee), g = sum(zmB$part_g), m = sum(zmB$part_m), B = I$B[["zmpp"]])
+stopifnot(abs(DEC[["base"]] - DEC[["net"]] - DEC[["g"]] - DEC[["m"]] - DEC[["B"]]) < 1)
+```
+
+```{r}
+#| label: tirages
+#| include: false
+
+# Tirages d'une matrice de flux plausible (scénario D) :
+#  - part réelle de la provenance majoritaire tirée entre 50 % et 100 % dans chaque localité ; le reste est réparti
+#    entre les autres communes de provenance au prorata de leur poids dans les départs et de leur proximité de la
+#    provenance majoritaire (noyau exponentiel, 50 km)
+#  - erreur de mesure multiplicative, sans biais : propre à chaque localité (écart-type de 20 %) et commune à toutes
+#    les localités d'une même commune d'accueil (15 %)
+Dkm <- as.matrix(dist(cbind(cd$x_km, cd$y_km))); dimnames(Dkm) <- list(cd$pcode, cd$pcode)
+pi_o <- f_ref[!is.na(origine) & origine != destination, .(d = sum(pdi)), by = origine][, pi := d / sum(d)]
+K_prox <- rbindlist(lapply(pi_o$origine, function(om) { o <- setdiff(pi_o$origine, om)
+  w <- pi_o[match(o, origine), pi] * exp(-Dkm[o, om] / 50); data.table(om = om, origine = o, w = w / sum(w)) }))
+l_refp <- l_ref[pdi > 0 & !is.na(origine)]
+simuler <- function(p_min = 0.5, sd_loc = 0.2, sd_com = 0.15) {
+  L <- copy(l_refp); ec <- setNames(exp(rnorm(nrow(cd), -sd_com^2 / 2, sd_com)), cd$pcode)
+  L[, pdi_s := pdi * exp(rnorm(.N, -sd_loc^2 / 2, sd_loc)) * ec[pcode]][, p := runif(.N, p_min, 1)]
+  maj  <- L[, .(origine, destination = pcode, pdi = pdi_s * p)]
+  rest <- L[, .(reste = sum(pdi_s * (1 - p))), by = .(destination = pcode, om = origine)]
+  rest <- merge(rest, K_prox, by = "om", allow.cartesian = TRUE)[, .(origine, destination, pdi = reste * w)]
+  rbind(maj, rest)[, .(pdi = sum(pdi)), by = .(origine, destination)]
+}
+set.seed(1)
+B_MC <- 300
+sims <- lapply(seq_len(B_MC), function(b) soldes(simuler()))
+mc <- rbindlist(lapply(sims, function(s) { x <- corriger(s); as.data.table(as.list(indic(x, grille_c(x)))) }))
+
+# Enveloppe globale : plafonds x règles de réattribution, surcomptage, tirages D, rounds 10 à 14
+REGLES <- c("axes", "axes_pap", "axes_cdb", "zmpp_dep", "zmpp", "departs")
+env <- list()
+for (cap in c(0.5, 0.75, 1)) for (rl in REGLES) env[[paste("plafond", cap, rl)]] <- corriger(s_ref, cap, rl)
+env[["surcomptage"]] <- scen$S
+for (r in 10:13) env[[paste("round", r)]] <- corriger(soldes(flux[round == r]))
+for (b in seq_len(B_MC)) env[[paste("D", b)]] <- corriger(sims[[b]])
+P_env <- sapply(env, function(x) x$pop_c); rownames(P_env) <- cd$pcode
+grp_env <- sub(" .*", "", names(env))
+zm_env <- colSums(P_env[cd$zmpp, ])
+ENV <- list(zm = range(zm_env), perte = I$REF[["zmpp"]] - rev(range(zm_env)),
+            par = sapply(split(zm_env, grp_env), range))
+cd[, `:=`(env_min = apply(P_env, 1, min), env_max = apply(P_env, 1, max))]
+coh <- rbindlist(lapply(10:14, function(r) {
+  s <- soldes(flux[round == r]); x <- corriger(s)
+  data.table(round = r, date = unique(panel[round == r]$date), pdi = flux[round == r, sum(pdi)], inter = sum(s$depart),
+             zmpp = sum(x$pop_c[x$zmpp]), dens = x[pcode == "HT0111", pop_c / km2], pap = x[pcode == "HT0111", pop_c])
+}))
+coh[, var_pap := c(NA, 100 * diff(pap) / head(pap, -1))]
+```
+
+```{r}
+#| label: violence
+#| include: false
+
+# Violence des gangs (UCDP) : décès pour 100 000 habitants de la population de base.
+# Mesure principale : décès des événements localisés précisément (lieu exact ou à proximité), sur les 12 mois se
+# terminant au mois de départ de chaque localité, pondérés par le nombre de déplacés ; pour les communes sans départ
+# attribué, la distribution nationale des mois de départ.
+MOIS <- seq(as.IDate("2017-01-01"), as.IDate("2026-09-01"), by = "month")
+mat_morts <- function(precis_seul = TRUE, cats = NULL, mesure = "morts") {
+  u <- ucdp[gang == TRUE & mois >= MOIS[1]]
+  if (precis_seul) u <- u[precis == TRUE]
+  if (!is.null(cats)) u <- u[categorie %in% cats]
+  a <- u[, .(m = sum(get(mesure))), by = .(pcode, mois)]
+  M <- matrix(0, nrow(cd), length(MOIS), dimnames = list(cd$pcode, as.character(MOIS)))
+  M[cbind(match(a$pcode, cd$pcode), match(as.character(a$mois), colnames(M)))] <- a$m
+  M
+}
+fenetre <- function(M, m, nm = 12) { j <- match(as.character(m), colnames(M)); rowSums(M[, max(1, j - nm + 1):j, drop = FALSE]) }
+dd_dep <- l_ref[!is.na(origine) & origine != pcode & pdi > 0][
+  , mois := as.IDate(format(as.IDate(as.numeric(date_depl), origin = "1899-12-30"), "%Y-%m-01"))]
+dd_dep[mois < MOIS[13], mois := MOIS[13]]; dd_dep[mois > as.IDate("2026-07-01"), mois := as.IDate("2026-07-01")]
+w_nat <- dd_dep[, .(w = sum(pdi)), by = mois][, w := w / sum(w)]
+w_com <- dd_dep[, .(w = sum(pdi)), by = .(pcode = origine, mois)][, w := w / sum(w), by = pcode]
+v_cohorte <- function(M, nm = 12) {
+  Fm <- sapply(as.character(sort(unique(c(w_nat$mois, w_com$mois)))), function(m) fenetre(M, as.IDate(m), nm))
+  out <- sapply(seq_len(nrow(cd)), function(i) { w <- w_com[pcode == cd$pcode[i]]; if (!nrow(w)) w <- w_nat
+    sum(w$w * Fm[i, as.character(w$mois)]) })
+  out / cd$pop0 * 1e5
+}
+v_periode <- function(M, d0, d1) rowSums(M[, colnames(M) >= as.character(d0) & colnames(M) <= as.character(d1), drop = FALSE]) / cd$pop0 * 1e5
+Mp <- mat_morts(TRUE)
+V <- data.table(pcode = cd$pcode,
+  coh      = v_cohorte(Mp),                                          # principale
+  coh_tout = v_cohorte(mat_morts(FALSE)),                            # toutes localisations
+  cum22    = v_periode(Mp, "2022-01-01", "2026-07-01"),              # cumul depuis 2022
+  contemp  = v_periode(Mp, "2025-08-01", "2026-07-01"),              # 12 mois précédant le round 14
+  futur    = v_periode(Mp, "2026-08-01", "2026-09-01"),              # placebo : après le round 14
+  coh_civ  = v_cohorte(mat_morts(TRUE, "Gangs contre civils")),
+  coh_aff  = v_cohorte(mat_morts(TRUE, c("État contre gangs", "Entre groupes armés"))),
+  coh_ev   = v_cohorte(mat_morts(TRUE, mesure = "evenements")))
+for (v in names(V)[-1]) cd[, (paste0("l_", v)) := log1p(V[[v]])]
+cd[, `:=`(viol = V$coh, lv = l_coh, l_ind = as.numeric(V$coh > 0))]
+cd[, classe_v := cut(viol, c(-Inf, 0, 5, 20, Inf), labels = c("0", "0-5", "5-20", ">20"))]
+# Calendrier des départs et des fenêtres
+S$dep_med <- dd_dep[order(mois)][, mois[which(cumsum(pdi) >= sum(pdi) / 2)[1]]]
+S$dep_avant_fen <- dd_dep[mois < as.IDate("2025-08-01"), sum(pdi)] / sum(dd_dep$pdi)
+S$n_viol <- sum(cd$viol > 0); S$n_viol_tout <- sum(V$coh_tout > 0)
+# Couverture de l'UCDP face aux décomptes de l'ONU (personnes tuées dans la violence liée aux gangs)
+ONU <- data.table(an = 2023:2025, onu = c(4789, 5601, 5915))
+couv <- merge(ONU, ucdp[gang == TRUE, .(ucdp = sum(morts), precis = sum(morts[precis])), by = .(an = year(mois))], by = "an")
+couv[, part := ucdp / onu]
+```
+
+
+```{r}
+#| label: esda
+#| include: false
+
+# Variables descriptives (pour 1 000 habitants, arc sinus hyperbolique) : départs du scénario central, arrivées, solde
+cd[, `:=`(y_dep = asinh(1000 * dep_B / pop0), y_arr = asinh(1000 * arrivee / pop0),
+          y_net = asinh(1000 * (arrivee - dep_B) / pop0), lviol = lv)]
+vars_esda <- c(y_dep = "Départs", y_arr = "Arrivées", y_net = "Solde", lviol = "Violence des gangs")
+mor <- rbindlist(lapply(names(Ws), function(w) {
+  r <- lapply(names(vars_esda), function(v) { m <- moran.test(cd[[v]], Ws[[w]]); c(I = unname(m$estimate[1]), p = m$p.value) })
+  l <- localmoran_perm(cd$y_net, Ws[[w]], nsim = 9999, iseed = 1)
+  pb <- l[, "Pr(z != E(Ii)) Sim"]
+  data.table(W = w, dep = r[[1]][1], arr = r[[2]][1], net = r[[3]][1], viol = r[[4]][1], pmax = max(sapply(r, `[`, 2)),
+             brut = sum(pb < 0.05), fdr = sum(p.adjust(pb, "fdr") < 0.05))
+}))
+lp <- localmoran_perm(cd$y_net, W, nsim = 9999, iseed = 1)
+p_fdr <- p.adjust(lp[, "Pr(z != E(Ii)) Sim"], "fdr")
+quad <- attr(lp, "quadr")$mean
+lisa_cl <- factor(ifelse(p_fdr < 0.05, as.character(quad), "Non significatif"),
+                  c("High-High", "Low-Low", "High-Low", "Low-High", "Non significatif"))
+levels(lisa_cl) <- c("Pôle d'accueil (élevé–élevé)", "Foyer de départ (faible–faible)",
+                     "Accueil isolé (élevé–faible)", "Solde faible isolé (faible–élevé)", "Non significatif")
+S$lisa <- lapply(1:4, function(k) cd$commune[as.integer(lisa_cl) == k])
+```
+
+```{r}
+#| label: coupe
+#| include: false
+
+# Modèle principal : pseudo-maximum de vraisemblance de Poisson (PPML), spécification SLX, exposition = population de base
+cd[, `:=`(W_lv = as.vector(Wm %*% lv), W_ldens = as.vector(Wm %*% ldens))]
+f_slx <- function(y, v = "lv") as.formula(paste0(y, " ~ ", v, " + W_", v, " + ldens + W_ldens + ldist"))
+ppml <- function(y, data = cd, v = "lv") fepois(f_slx(y, v), data, offset = ~log(pop0), vcov = "hetero")
+effets_slx <- function(m, v = "lv") { b <- coef(m); Vc <- vcov(m); k <- c(v, paste0("W_", v))
+  data.table(effet = c("direct", "indirect", "total"), est = c(b[[k[1]]], b[[k[2]]], sum(b[k])),
+             se = c(sqrt(Vc[k[1], k[1]]), sqrt(Vc[k[2], k[2]]), sqrt(sum(Vc[k, k]))))[, p := 2 * pnorm(-abs(est / se))][] }
+m_dep <- ppml("dep_B"); m_arr <- ppml("arrivee"); m_brut <- ppml("depart")
+E_dep <- effets_slx(m_dep); E_arr <- effets_slx(m_arr); E_brut <- effets_slx(m_brut)
+E_dep_c <- effets_slx(summary(m_dep, vcov = conley(50))); E_arr_c <- effets_slx(summary(m_arr, vcov = conley(50)))
+# Conley (50 km) est calculé pour contrôle mais non retenu : vérifie qu'il est partout plus petit que l'écart-type robuste
+S$conley_petit <- all(c(E_dep_c$se, E_arr_c$se) <= c(E_dep$se, E_arr$se))
+ef <- function(E, e) E[effet == e]
+dix <- function(b) 100 * (1.1^b - 1)                    # variation (%) pour une hausse de 10 % de (1 + mortalité)
+S$v_med <- median(cd$viol[cd$viol > 0])
+S$mult_med <- (1 + S$v_med)^ef(E_dep, "direct")$est   # départs à la mortalité médiane des communes touchées / sans violence
+# Calendrier de la violence : cumul depuis 2022, 12 mois avant le round, placebo (violence postérieure au round)
+for (v in c("l_cum22", "l_contemp", "l_futur")) cd[, (paste0("W_", v)) := as.vector(Wm %*% get(v))]
+m_cum <- ppml("dep_B", v = "l_cum22"); m_con <- ppml("dep_B", v = "l_contemp"); m_fut <- ppml("dep_B", v = "l_futur")
+m_fut2 <- fepois(dep_B ~ lv + W_lv + l_futur + ldens + W_ldens + ldist, cd, offset = ~log(pop0), vcov = "hetero")
+E_cum <- effets_slx(m_cum, "l_cum22"); E_con <- effets_slx(m_con, "l_contemp"); E_fut <- effets_slx(m_fut, "l_futur")
+pl2 <- coeftable(m_fut2)
+# Sans Gressier ni Mirebalais
+garder <- !cd$pcode %in% c("HT0116", "HT0621")
+sous_W <- function(keep) { cdk <- copy(cd[keep]); Wk <- listw2mat(subset(W, keep))
+  cdk[, `:=`(W_lv = as.vector(Wk %*% lv), W_ldens = as.vector(Wk %*% ldens))]; cdk }
+E_sgm <- effets_slx(ppml("dep_B", sous_W(garder)))
+# Partie binaire : être commune de départ
+m_logit <- feglm(I(dep_B > 0) ~ lv + W_lv + ldens + W_ldens + ldist, cd, family = binomial, vcov = "hetero")
+# Dépendance spatiale résiduelle (résidus de Pearson)
+S$moran_dep <- moran.test(resid(m_dep, type = "pearson"), W)$p.value
+S$moran_arr <- moran.test(resid(m_arr, type = "pearson"), W)$p.value
+# Incertitude de la matrice des flux : 100 tirages (scénario D), combinés par les règles de Rubin
+B_MS <- 100
+est_tirage <- function(s) { x <- corriger(s)
+  z <- copy(cd)[, `:=`(dep_B = x$dep_c[match(pcode, x$pcode)], arrivee = s$arrivee[match(pcode, s$pcode)])]
+  rbind(cbind(y = "dep", effets_slx(ppml("dep_B", z))), cbind(y = "arr", effets_slx(ppml("arrivee", z)))) }
+R_t <- rbindlist(lapply(seq_len(B_MS), function(b) cbind(b = b, est_tirage(sims[[b]]))))
+rubin <- R_t[, { m <- .N; qb <- mean(est); ub <- mean(se^2); bb <- var(est); tt <- ub + (1 + 1 / m) * bb
+  dfr <- (m - 1) * (1 + ub / ((1 + 1 / m) * bb))^2
+  .(est = qb, se = sqrt(tt), p = 2 * pt(-abs(qb / sqrt(tt)), dfr), lo = quantile(est, 0.05), hi = quantile(est, 0.95),
+    part_entre = (1 + 1 / m) * bb / tt) }, by = .(y, effet)]
+hors_r <- merge(rubin, rbind(cbind(y = "dep", E_dep), cbind(y = "arr", E_arr))[, .(y, effet, obs = est)],
+                by = c("y", "effet"))[obs < lo | obs > hi]
+S$rubin_hors <- if (nrow(hors_r) == 0) "" else paste0(", sauf ", liste_fr(paste0(
+  c(direct = "l'effet direct", indirect = "l'effet indirect", total = "l'effet total")[hors_r$effet], " sur les ",
+  c(dep = "départs", arr = "arrivées")[hors_r$y], " (", fmt(hors_r$obs, 2), ", pour un intervalle de ", fmt(hors_r$lo, 2),
+  " à ", fmt(hors_r$hi, 2), ")")))
+```
+
+```{r}
+#| label: comparaison
+#| include: false
+
+# Les huit modèles linéaires de la famille spatiale (Elhorst), sur les variables en arc sinus hyperbolique (annexe A)
+f_y <- function(y) as.formula(paste(y, "~ lviol + ldens + ldist"))
+dur <- ~ lviol + ldens
+ctl1 <- list(pre_eig = ev); ctl2 <- list(pre_eig1 = ev, pre_eig2 = ev)
+estimer_8 <- function(y) list(
+  MCO  = lm(f_y(y), cd),
+  SLX  = lmSLX(f_y(y), cd, W, Durbin = dur),
+  SAR  = lagsarlm(f_y(y), cd, W, control = ctl1),
+  SEM  = errorsarlm(f_y(y), cd, W, control = ctl1),
+  SAC  = sacsarlm(f_y(y), cd, W, control = ctl2),
+  SDM  = lagsarlm(f_y(y), cd, W, Durbin = dur, control = ctl1),
+  SDEM = errorsarlm(f_y(y), cd, W, Durbin = dur, control = ctl1),
+  GNS  = sacsarlm(f_y(y), cd, W, Durbin = dur, control = ctl2))
+effets_v <- function(m, nm) {    # effets direct et total de la violence (p simulées, 2 000 tirages)
+  if (nm %in% c("MCO", "SEM")) {
+    cf <- if (nm == "MCO") summary(m)$coefficients else summary(m)$Coef
+    return(c(dir = cf["lviol", 1], pdir = cf["lviol", 4], tot = cf["lviol", 1], ptot = cf["lviol", 4]))
+  }
+  s <- summary(impacts(m, listw = W, R = 2000), zstats = TRUE, short = TRUE)
+  k <- grep("^lviol", rownames(s$pzmat)); cn <- colnames(s$pzmat)
+  d <- if (!is.null(s$res)) s$res$direct[k] else s$impacts$direct[["lviol"]]
+  t <- if (!is.null(s$res)) s$res$total[k] else s$impacts$total[["lviol"]]
+  c(dir = unname(d), pdir = unname(s$pzmat[k, grep("direct", cn, ignore.case = TRUE)[1]]),
+    tot = unname(t), ptot = unname(s$pzmat[k, grep("total", cn, ignore.case = TRUE)[1]]))
+}
+p_wald <- function(e, se) if (is.null(e)) NA_real_ else 2 * pnorm(-abs(e / se))
+set.seed(5)
+mods <- lapply(c(dep = "y_dep", arr = "y_arr"), estimer_8)
+cmp <- lapply(mods, function(ms) rbindlist(lapply(names(ms), function(nm) {
+  m <- ms[[nm]]; e <- effets_v(m, nm); s <- if (inherits(m, "Sarlm")) summary(m) else NULL
+  data.table(modele = nm, dir = e[["dir"]], pdir = e[["pdir"]], est = e[["tot"]], p = e[["ptot"]], aic = AIC(m),
+             rho = if (is.null(m$rho)) NA_real_ else unname(m$rho),
+             p_rho = if (is.null(m$rho)) NA_real_ else unname(p_wald(m$rho, s$rho.se)),
+             lambda = if (is.null(m$lambda)) NA_real_ else unname(m$lambda),
+             p_lambda = if (is.null(m$lambda)) NA_real_ else unname(p_wald(m$lambda, s$lambda.se)))
+})))
+rang_aic <- lapply(cmp, function(z) setNames(rank(z$aic), z$modele))
+paires <- list(c("GNS", "SDM"), c("GNS", "SDEM"), c("GNS", "SAC"), c("SDM", "SAR"), c("SDM", "SEM"), c("SDM", "SLX"),
+               c("SDEM", "SEM"), c("SDEM", "SLX"), c("SAC", "SAR"), c("SAC", "SEM"))
+lr <- sapply(mods, function(ms) sapply(paires, function(pp) LR.Sarlm(ms[[pp[1]]], ms[[pp[2]]])$p.value[[1]]))
+rownames(lr) <- sapply(paires, paste, collapse = "-")
+eq_fr <- c(dep = "les départs", arr = "les arrivées")
+phr_lr <- function(t, sujet) {
+  e5 <- names(eq_fr)[lr[t, names(eq_fr)] < 0.05]; e10 <- setdiff(names(eq_fr)[lr[t, names(eq_fr)] < 0.10], e5)
+  if (!length(e5) && !length(e10)) return(paste0(sujet, " n'est rejeté dans aucune équation"))
+  paste0(sujet, " est rejeté", if (length(e5)) paste0(" au seuil de 5 % pour ", liste_fr(eq_fr[e5])) else "",
+         if (length(e5) && length(e10)) " et" else "", if (length(e10)) paste0(" au seuil de 10 % pour ", liste_fr(eq_fr[e10])) else "")
+}
+diag_lm <- lapply(mods, function(ms) { o <- ms$MCO; rs <- lm.RStests(o, W, test = "all")
+  c(moran = lm.morantest(o, W)$p.value, sapply(rs[c("RSerr", "RSlag", "adjRSerr", "adjRSlag")], function(t) t$p.value)) })
+S$gns_rho <- sapply(cmp, function(z) z[modele == "GNS", rho]); S$gns_lambda <- sapply(cmp, function(z) z[modele == "GNS", lambda])
+S$gns_txt <- paste(sapply(names(cmp), function(o) { r <- cmp[[o]][modele == "GNS"]
+  paste0("pour ", eq_fr[[o]], ", ρ\u00a0=\u00a0", fmt(r$rho, 2), " et λ\u00a0=\u00a0", fmt(r$lambda, 2),
+         if (sign(r$rho) != sign(r$lambda)) ", de signes opposés" else "",
+         if (r$p_rho >= 0.1 && r$p_lambda >= 0.1) ", aucun des deux n'étant significatif" else "") }), collapse = " ; ")
+```
+
+```{r}
+#| label: robustesse
+#| include: false
+
+# Robustesse du modèle principal (PPML-SLX) : voisinage, mesure de la violence, échantillon
+pp_var <- function(y, data, lw, v) { Wx <- listw2mat(lw); d <- copy(data)
+  d[, `:=`(vv = get(v), W_vv = as.vector(Wx %*% get(v)), W_ldens = as.vector(Wx %*% ldens))]
+  m <- fepois(as.formula(paste(y, "~ vv + W_vv + ldens + W_ldens + ldist")), d, offset = ~log(pop0), vcov = "hetero")
+  effets_slx(m, "vv") }
+hors_zm <- !cd$zmpp
+rob_def <- list(
+  "Principale (six plus proches voisins)" = list(cd, W, "lv"),
+  "Quatre plus proches voisins" = list(cd, Ws[[1]], "lv"), "Huit plus proches voisins" = list(cd, Ws[[3]], "lv"),
+  "Contiguïté (reine)" = list(cd, Ws[[4]], "lv"), "Inverse de la distance (60 km)" = list(cd, Ws[[5]], "lv"),
+  "Violence : toutes localisations" = list(cd, W, "l_coh_tout"), "Violence : cumul depuis 2022" = list(cd, W, "l_cum22"),
+  "Violence : 12 mois avant le round" = list(cd, W, "l_contemp"), "Violence : événements au lieu des décès" = list(cd, W, "l_coh_ev"),
+  "Violence : tueries de civils seulement" = list(cd, W, "l_coh_civ"),
+  "Violence : affrontements armés seulement" = list(cd, W, "l_coh_aff"),
+  "Violence : indicatrice (au moins un décès)" = list(cd, W, "l_ind"),
+  "Sans Gressier ni Mirebalais" = list(cd[garder], subset(W, garder), "lv"),
+  "Sans la zone métropolitaine" = list(cd[hors_zm], subset(W, hors_zm), "lv"))
+rob <- rbindlist(lapply(names(rob_def), function(n) { a <- rob_def[[n]]
+  d <- pp_var("dep_B", a[[1]], a[[2]], a[[3]]); r <- pp_var("arrivee", a[[1]], a[[2]], a[[3]])
+  data.table(variante = n, dd = d$est[1], pdd = d$p[1], dt = d$est[3], pdt = d$p[3], at = r$est[3], pat = r$p[3]) }))
+S$rob_dep <- rob[dt > 0 & pdt < 0.1, .N]; S$rob_arr_sig <- rob[pat < 0.1, .N]
+S$rob_dep_ns <- rob[!(dt > 0 & pdt < 0.1), variante]
+# Classes de mortalité : effet de seuil
+m_cl_dep <- fepois(dep_B ~ i(classe_v, ref = "0") + ldens + ldist, cd, offset = ~log(pop0), vcov = "hetero")
+m_cl_arr <- fepois(arrivee ~ i(classe_v, ref = "0") + ldens + ldist, cd, offset = ~log(pop0), vcov = "hetero")
+```
+
+```{r}
+#| label: gravite
+#| include: false
+
+orig <- unique(f_ref[origine != destination]$origine)
+mk_od <- function(rester = FALSE) {
+  od <- CJ(origine = orig, destination = cd$pcode); if (!rester) od <- od[origine != destination]
+  od <- merge(od, f_ref[, .(pdi = sum(pdi)), by = .(origine, destination)], by = c("origine", "destination"), all.x = TRUE)
+  od[is.na(pdi), pdi := 0]
+  od <- merge(od, cd[, .(destination = pcode, xd = x_km, yd = y_km, xpd = xp_km, ypd = yp_km, popd = pop0, densd = pop0 / km2_ihsi,
+                         km2d = km2_ihsi, lviold = lv, depd = dep_pcode, zmppd = as.integer(zmpp))], by = "destination")
+  od <- merge(od, cd[, .(origine = pcode, xo = x_km, yo = y_km, xpo = xp_km, ypo = yp_km, depo = dep_pcode)], by = "origine")
+  od[, dist := sqrt((xd - xo)^2 + (yd - yo)^2)]
+  od[origine == destination, dist := (2 / 3) * sqrt(km2d / pi)]                     # distance interne
+  od[, `:=`(ldist = log(dist), ldistp = log(pmax(sqrt((xpd - xpo)^2 + (ypd - ypo)^2), 1)), lpopd = log(popd),
+            ldensd = log(densd), meme_dep = as.integer(depd == depo), meme_com = as.integer(origine == destination))]
+  od }
+od <- mk_od(); od_r <- mk_od(TRUE)
+X1 <- c("ldist", "lpopd", "lviold", "ldensd", "meme_dep"); X2 <- c(X1, "zmppd")
+fg <- function(X, fe = "origine") as.formula(paste("pdi ~", paste(X, collapse = " + "), "|", fe))
+cl2 <- ~origine + destination                          # écarts-types regroupés par provenance et par destination
+g1 <- fepois(fg(X1), od, cluster = cl2); g2 <- fepois(fg(X2), od, cluster = cl2)
+g3 <- fepois(pdi ~ ldist + meme_dep | origine + destination, od, cluster = cl2)
+g4 <- fepois(pdi ~ ldist + meme_dep + meme_com | origine + destination, od_r, cluster = cl2)
+# Wild cluster bootstrap par provenance (score, Kline et Santos ; pondérations de Webb), effets fixes de provenance
+webb <- c(-sqrt(1.5), -1, -sqrt(0.5), sqrt(0.5), 1, sqrt(1.5))
+wcb <- function(X, var, data = od, B = 9999, fe = "origine") {
+  mr <- fepois(fg(setdiff(X, var), fe), data); mu <- fitted(mr); dd <- data[obs(mr)]
+  xt <- resid(feols(as.formula(paste(var, "~", paste(setdiff(X, var), collapse = " + "), "|", fe)), dd, weights = mu))
+  psi <- tapply(xt * (dd$pdi - mu), dd$origine, sum)
+  t0 <- sum(psi) / sqrt(sum(psi^2))
+  w <- matrix(sample(webb, length(psi) * B, replace = TRUE), B, length(psi))
+  mean(abs((w %*% psi) / sqrt((w^2) %*% psi^2)) >= abs(t0))
+}
+set.seed(2)
+pw2 <- sapply(X2, function(v) wcb(X2, v))
+S$pop10 <- dix(coef(g2)[["lpopd"]])
+# Robustesse de l'effet de la distance
+gpc <- fepois(fg(replace(X2, 1, "ldistp")), od, cluster = cl2)
+od_x <- od[!origine %in% c("HT0116", "HT0621")]
+gx  <- fepois(pdi ~ ldist + meme_dep | origine + destination, od_x, cluster = cl2)
+gx1 <- fepois(fg(X2), od_x, cluster = cl2)
+VIOL_SUR <- pw2[["lviold"]] < 0.1
+od[, classe := cut(dist, c(0, 25, 50, 100, Inf), labels = c("moins de 25 km", "25 à 50 km", "50 à 100 km", "plus de 100 km"))]
+gb  <- fepois(pdi ~ i(classe, ref = "moins de 25 km") + lpopd + lviold + ldensd + meme_dep + zmppd | origine, od, cluster = cl2)
+gbd <- fepois(pdi ~ i(classe, ref = "moins de 25 km") + meme_dep | origine + destination, od, cluster = cl2)
+gq  <- fepois(pdi ~ ldist + I(ldist^2) + lpopd + lviold + ldensd + meme_dep + zmppd | origine, od, cluster = cl2)
+bq <- coef(gq); Vq <- vcov(gq); lm_ <- log(median(od[pdi > 0]$dist))
+g_q <- c(1, 2 * lm_); el_q <- sum(bq[1:2] * g_q); se_q <- sqrt(drop(t(g_q) %*% Vq[1:2, 1:2] %*% g_q))
+S$cl_25 <- 100 * (exp(coef(gb)[1:3]) - 1); S$cl_25d <- 100 * (exp(coef(gbd)[1:3]) - 1)
+S$part_25 <- odd[origine != destination, sum(pdi[dist < 25]) / sum(pdi)]
+```
+
+```{r}
+#| label: panel
+#| include: false
+
+# Panel des rounds 7 à 14 : violence mesurée sur l'intervalle entre deux rounds (fenêtres non chevauchantes),
+# en décès pour 100 000 habitants et par mois, localisation précise
+dates_r <- unique(panel[, .(round, date)])[order(round)]
+pn <- merge(panel[round >= 7], cd[, .(pcode, pop0)], by = "pcode"); setorder(pn, round, pcode)
+stopifnot(pn[, all(pcode == cd$pcode), by = round]$V1)
+Mrp <- ucdp[gang == TRUE & precis == TRUE, .(m = sum(morts)), by = .(pcode, mois)]
+taux_int <- function(d0, d1) { nm <- max(1, round(as.numeric(d1 - d0) / 30.44))
+  z <- Mrp[mois > d0 & mois <= d1, .(m = sum(m)), by = pcode]
+  v <- merge(cd[, .(pcode, pop0)], z, by = "pcode", all.x = TRUE)[order(pcode)]; v[is.na(m), m := 0]; v$m / v$pop0 * 1e5 / nm }
+for (r in 7:14) {
+  d1 <- dates_r[round == r, date]; d0 <- dates_r[round == r - 1, date]; d00 <- dates_r[round == r - 2, date]
+  d2 <- if (r < 14) dates_r[round == r + 1, date] else as.IDate("2026-09-30")
+  pn[round == r, `:=`(v = log1p(taux_int(d0, d1)), v_l1 = log1p(taux_int(d00, d0)), v_lead = log1p(taux_int(d1, d2)))]
+}
+pn[, y := asinh(1000 * pdi / pop0)]
+for (vv in c("v", "v_l1", "v_lead")) pn[, (paste0("w", vv)) := as.vector(Wm %*% get(vv)), by = round]
+p_fe  <- feols(y ~ v + wv | pcode + round, pn, cluster = ~pcode)
+p_ret <- feols(y ~ v + wv + v_l1 + wv_l1 | pcode + round, pn, cluster = ~pcode)
+p_av  <- feols(y ~ v + wv + v_lead + wv_lead | pcode + round, pn, cluster = ~pcode)
+pdat <- as.data.frame(pn[, .(pcode, round, y, v, wv)])
+p_sdm <- spml(y ~ v + wv, data = pdat, index = c("pcode", "round"), listw = W, model = "within", effect = "twoways",
+              lag = TRUE, spatial.error = "none")
+c_sdm <- summary(p_sdm)$CoefTable
+# Panel dynamique : différences premières et méthode des moments généralisés (Arellano et Bond), y(t-1) instrumenté
+# par y(t-3) à y(t-5) (le test d'autocorrélation d'ordre 2 rejette l'usage de y(t-2))
+ppd <- pdata.frame(pdat, index = c("pcode", "round"))
+gm <- pgmm(y ~ lag(y, 1) + v + wv | lag(y, 3:5), data = ppd, effect = "twoways", model = "twosteps", transformation = "d")
+gms <- summary(gm, robust = TRUE)
+c_gm <- gms$coefficients
+S$gm_ar2 <- gms$m2$p.value; S$gm_sargan <- gms$sargan$p.value
+dyn <- SDPDm(formula = y ~ v, data = as.data.frame(pn[, .(pcode, round, y, v)]), W = Wm, index = c("pcode", "round"),
+             model = "sdm", effect = "twoways", dynamic = TRUE, tlaginfo = list(ind = NULL, tl = TRUE, stl = TRUE), LYtrans = TRUE)
+cdyn <- data.table(var = names(dyn$coefficients1), est = dyn$coefficients1, se = dyn$std1, p = dyn$pval1)
+```
+
+```{r}
+#| label: densite-calc
+#| include: false
+
+# Traduction en densité des résultats de la section 6 : population qu'aurait chaque commune sans l'effet direct
+# estimé de sa propre violence sur ses départs et ses arrivées (à densité et distance égales). Les départs et les
+# arrivées observés sont multipliés par exp(-beta x violence) : la part non prédite par le modèle (résidu) est conservée.
+traduire <- function(bd, ba, x = cd$lv) { dcf <- cd$dep_B * exp(-bd * x); acf <- cd$arrivee * exp(-ba * x)
+  pcf <- cd$pop0 - dcf + acf; list(pcf = pcf, ecart = 100 * (cd$pop_B / pcf - 1)) }
+b_d <- ef(E_dep, "direct")$est; b_a <- ef(E_arr, "direct")$est
+t0 <- traduire(b_d, b_a)
+cd[, `:=`(pop_cf = t0$pcf, ecart = t0$ecart, part_v = pop_B - t0$pcf, autre = t0$pcf - pop0)]
+set.seed(9)
+tir_d <- rnorm(2000, b_d, ef(E_dep, "direct")$se); tir_a <- rnorm(2000, b_a, ef(E_arr, "direct")$se)
+E_t <- sapply(1:2000, function(k) traduire(tir_d[k], tir_a[k])$ecart)
+cd[, `:=`(ecart_lo = apply(E_t, 1, quantile, 0.05), ecart_hi = apply(E_t, 1, quantile, 0.95))]
+# Sensibilité à la forme de la violence : indicatrice, classes de mortalité
+m_ind_d <- fepois(dep_B ~ l_ind + ldens + ldist, cd, offset = ~log(pop0), vcov = "hetero")
+m_ind_a <- fepois(arrivee ~ l_ind + ldens + ldist, cd, offset = ~log(pop0), vcov = "hetero")
+cd[, ecart_ind := traduire(coef(m_ind_d)[["l_ind"]], coef(m_ind_a)[["l_ind"]], cd$l_ind)$ecart]
+eff_cl <- function(m) { b <- c("0" = 0, setNames(coef(m)[grep("classe_v", names(coef(m)))], c("0-5", "5-20", ">20"))); unname(b[as.character(cd$classe_v)]) }
+cd[, ecart_cl := 100 * (pop_B / (pop0 - dep_B * exp(-eff_cl(m_cl_dep)) + arrivee * exp(-eff_cl(m_cl_arr))) - 1)]
+CENSURE <- scen$B[exces > 0, pcode]                     # communes dont les départs sont plafonnés (Gressier, Mirebalais)
+top_e <- cd[order(ecart)][1:10]
+S$top_e <- top_e$commune; S$pap_e <- cd[pcode == "HT0111"]
+S$cabaret <- cd[pcode == "HT0142"]
+S$d_pap <- c(d15 = cd[pcode == "HT0111", pop_2015 / km2_ihsi], d24 = cd[pcode == "HT0111", pop_2024 / km2_ihsi],
+             d0 = cd[pcode == "HT0111", pop0 / km2_ihsi], d26 = cd[pcode == "HT0111", pop_B / km2_ihsi])
+# Données de l'image de couverture (scripts/03_carte_3d_violence.R) : grille de 1 km du scénario central et écart
+saveRDS(list(grille = grille[, .(x, y, pcode, pop_B = gp$B)],
+             communes = cd[, .(pcode, commune, departement, zmpp, ecart, viol, d26 = pop_B / km2_ihsi, pop0, pop_B,
+                               var_B, depart, arrivee, intra)], top3 = cd[order(ecart)][1:3]$commune),
+        file.path(D, "densite_violence.rds"))
+# Populations corrigées publiées (par commune et par section communale)
+dir.create("data/publication", showWarnings = FALSE)
+fwrite(cd[, .(pcode, commune, departement, zone_metropolitaine = zmpp, superficie_km2 = round(km2_ihsi, 2),
+              population_ihsi_2015 = round(pop_2015), population_ihsi_2024 = round(pop_2024), population_base = round(pop0),
+              departs_declares = round(depart), departs_corriges = round(dep_B), arrivees = round(arrivee), deplaces_internes_commune = round(intra),
+              population_corrigee = round(pop_B), enveloppe_min = round(env_min), enveloppe_max = round(env_max),
+              densite_base = round(pop0 / km2_ihsi, 1), densite_corrigee = round(pop_B / km2_ihsi, 1))],
+       "data/publication/populations_communes_juillet2026.csv")
+fwrite(merge(secE[, .(section, pcode, population_base = round(wp_s), deplaces_heberges = round(heb), population_corrigee_E = round(pop_s))],
+             sd[, .(section, nom_section)], by = "section")[order(section)],
+       "data/publication/populations_sections_juillet2026.csv")
+```
+
+
+```{r}
+#| label: sigles
+#| include: false
+
+sig <- data.frame(Sigle = c("BINUH", "CELADE", "COD-AB", "DTM", "ETT", "GED", "GMM", "GNS", "HCDH", "HDX", "IHSI", "IPC", "LISA", "LM",
+                            "MCO", "OCHA", "OIM", "PDI", "PPML", "SAC", "SAR", "SDEM", "SDM", "SDPD", "SEM", "SLX", "UCDP", "ρ, λ, θ"),
+  Signification = c("Bureau intégré des Nations unies en Haïti", "Centre latino-américain et caribéen de démographie (CEPAL)",
+    "Common Operational Datasets – Administrative Boundaries : limites administratives de référence (OCHA)",
+    "Displacement Tracking Matrix : Matrice de suivi des déplacements (OIM)", "Emergency Tracking Tool : relevé d'urgence de la DTM",
+    "Georeferenced Event Dataset : base d'événements géolocalisés de l'UCDP", "Méthode des moments généralisés",
+    "General Nesting Spatial model : modèle général d'emboîtement (Manski)", "Haut-Commissariat des Nations unies aux droits de l'homme",
+    "Humanitarian Data Exchange (OCHA)", "Institut haïtien de statistique et d'informatique",
+    "Cadre intégré de classification de la sécurité alimentaire", "Local Indicators of Spatial Association : indicateurs locaux d'association spatiale",
+    "Multiplicateur de Lagrange (test)", "Moindres carrés ordinaires", "Bureau de la coordination des affaires humanitaires des Nations unies",
+    "Organisation internationale pour les migrations", "Personne déplacée interne",
+    "Pseudo-maximum de vraisemblance de Poisson", "Modèle à retard et à erreur spatiaux (Wy et Wu)", "Modèle à retard spatial (Wy)",
+    "Modèle de Durbin à erreur spatiale (WX et Wu)", "Modèle de Durbin spatial (Wy et WX)", "Panel spatial dynamique",
+    "Modèle à erreur spatiale (Wu)", "Modèle à retard des variables explicatives (WX)", "Uppsala Conflict Data Program : programme de données sur les conflits d'Uppsala",
+    "Paramètres de dépendance spatiale de la variable expliquée (ρ) et des erreurs (λ) ; coefficients des variables des voisines (θ)"))
+names(sig)[1] <- paste0("Sigle", strrep("\u00a0", 6))
+```
+
+```{=latex}
+\clearpage
+```
+
+::: {.content-visible when-format="pdf"}
+# Liste des sigles et notations {.unnumbered .unlisted}
+
+```{r}
+#| label: sigles-pdf
+
+knitr::kable(sig, row.names = FALSE, align = c("l", "l"))
+```
+:::
+
+```{=latex}
+\clearpage
+\renewcommand*{\listtablename}{Liste des tableaux}
+\renewcommand*{\listfigurename}{Liste des figures}
+\danslistestrue
+\listetableaux
+\clearpage
+\listoffigures
+\danslistesfalse
+\clearpage
+```
+
+::: {.cadre}
+```{=latex}
+\begin{cadreresume}{Résumé}
+```
+
+::: {.content-visible when-format="html"}
+**Résumé**
+:::
+
+Les grilles de population (WorldPop) et les estimations officielles de l'Institut haïtien de statistique et d'informatique (IHSI) pour 2024 reprennent, à l'intérieur de chaque département, la répartition communale de 2015. Elles ignorent donc les `r fmt(S$pdi14 / 1e6, 2)` million de personnes déplacées recensées en `r mois_an(S$date14)` par la Matrice de suivi des déplacements (DTM) de l'Organisation internationale pour les migrations (OIM). À partir des fichiers détaillés de la DTM, nous reconstituons les flux entre communes de provenance et d'accueil et corrigeons les populations communales sous plusieurs hypothèses. Selon le traitement des provenances déclarées incohérentes, la zone métropolitaine de Port-au-Prince compterait entre `r fmt(ENV$zm[1] / 1e6, 2)` et `r fmt(ENV$zm[2] / 1e6, 2)` millions d'habitants (`r fmt(I$B[["zmpp"]] / 1e6, 2)` millions dans le scénario central), contre `r fmt(S$zm_24 / 1e6, 2)` millions dans l'estimation officielle de 2024. Les villes de province, surtout dans le Sud, la Grand'Anse, le Sud-Est et le Plateau central, gagnent des habitants. Les déplacés qui changent de commune privilégient les destinations proches et, au-delà d'environ 25 km, les plus peuplées`r if (VIOL_SUR) " et les moins violentes" else ""`. Les communes les plus touchées par la violence meurtrière des gangs, telle que la recense le programme de données sur les conflits d'Uppsala (UCDP), sont aussi celles d'où partent le plus de déplacés. Cette association résiste aux spécifications, sans qu'on puisse en établir le caractère causal. Le panel, qui suit chaque commune d'un *round* à l'autre, ne met pas en évidence d'association robuste.
+
+```{=latex}
+\end{cadreresume}
+```
+:::
+
+::: {.cadre}
+```{=latex}
+\begin{cadreresume}{Abstract}
+```
+
+::: {.content-visible when-format="html"}
+**Abstract**
+:::
+
+::: {lang="en"}
+Gridded population products (WorldPop) and the 2024 official estimates of Haiti's statistical institute (IHSI) keep, within each department, the 2015 distribution of population across municipalities. They therefore ignore the `r formatC(S$pdi14 / 1e6, format = "f", digits = 2)` million internally displaced persons recorded in July 2026 by the Displacement Tracking Matrix (DTM) of the International Organization for Migration. Using the DTM's locality-level files, we rebuild flows between municipalities of origin and of refuge and correct municipal populations under several assumptions. Depending on how inconsistent declared origins are handled, the Port-au-Prince metropolitan area would have between `r formatC(ENV$zm[1] / 1e6, format = "f", digits = 2)` and `r formatC(ENV$zm[2] / 1e6, format = "f", digits = 2)` million inhabitants (`r formatC(I$B[["zmpp"]] / 1e6, format = "f", digits = 2)` million in the central scenario), against `r formatC(S$zm_24 / 1e6, format = "f", digits = 2)` million in the official 2024 estimate. Provincial towns, especially in the South, Grand'Anse, South-East and Central Plateau, gain population. Displaced people who change municipality favour nearby destinations and, beyond about 25 km, the most populous `r if (VIOL_SUR) "and least violent " else ""`ones. The municipalities most affected by lethal gang violence, as recorded by the Uppsala Conflict Data Program (UCDP), are also those that most people leave. This association is robust across specifications, but cannot be given a causal interpretation. A panel that follows each municipality across rounds finds no robust association.
+:::
+
+```{=latex}
+\end{cadreresume}
+```
+:::
+
+```{=latex}
+\begingroup\small
+```
+
+**Mots-clés** : déplacements internes ; population ; densité ; Haïti ; violence des gangs ; économétrie spatiale ; Matrice de suivi des déplacements.\
+[**Keywords:** internal displacement; population estimates; density; Haiti; gang violence; spatial econometrics; Displacement Tracking Matrix.]{lang="en"}\
+**Codes JEL** : C21, D74, J11, O15, R23.
+
+```{=latex}
+\par\endgroup
+```
+
+::: {.content-visible when-format="html"}
+# Liste des sigles et notations {.unnumbered}
+
+```{r}
+#| label: sigles-html
+
+knitr::kable(sig, row.names = FALSE, align = c("l", "l"))
+```
+:::
+
+```{=latex}
+\clearpage
+\pagenumbering{arabic}
+```
+
+# Introduction {#sec-introduction}
+
+Depuis 2022, la violence des groupes armés a provoqué en Haïti des déplacements internes d'une ampleur sans précédent dans l'histoire récente du pays. La Matrice de suivi des déplacements (DTM) de l'Organisation internationale pour les migrations (OIM) recensait `r fmt(S$pdi0)` personnes déplacées internes (PDI) en `r mois_an(S$date0)` ; elle en dénombre `r fmt(S$pdi14)` en `r mois_an(S$date14)` [@oim2026], soit `r pc(S$part14)` des `r fmt(sum(cd$pop_2024))` habitants estimés par l'IHSI pour 2024. Ces mouvements redessinent la géographie du peuplement. Des quartiers entiers de la capitale se vident, tandis que des villes de province voient leur population augmenter en quelques mois.
+
+Les cartes de population les plus utilisées ne rendent pas compte de ce bouleversement. Les grilles de WorldPop, qui estiment le nombre d'habitants de chaque carré de 100 mètres, servent de base à de nombreux calculs : densités, populations exposées à un risque, dénominateurs de taux de couverture [@stevens2015; @tatem2017]. Pour Haïti, elles reprennent, comme les estimations officielles, la répartition de la population entre communes d'avant la crise (@sec-donnees). La question est double : que deviennent les populations et les densités communales lorsqu'on tient compte des déplacements, et dans quelle mesure leur évolution est-elle associée à la violence des gangs ?
+
+L'article apporte trois contributions. Il construit d'abord, à partir des fichiers détaillés de la DTM, des populations communales corrigées des déplacements, accompagnées de fourchettes, et les publie avec le code qui les produit. Il identifie ensuite deux provenances déclarées incohérentes, Gressier et Mirebalais, dont le traitement commande l'ampleur de la correction, et propose pour chacune une règle fondée sur la cause de l'incohérence. Il mesure enfin l'association entre la violence des gangs, datée au moment des départs, et la géographie des départs, des arrivées et des stocks de déplacés, au moyen de modèles spatiaux de comptage, de modèles gravitaires et d'un panel.
+
+Les résultats tiennent en quatre points. La zone métropolitaine de Port-au-Prince compterait entre `r fmt(ENV$zm[1] / 1e6, 2)` et `r fmt(ENV$zm[2] / 1e6, 2)` millions d'habitants en juillet 2026, `r fmt(I$B[["zmpp"]] / 1e6, 2)` millions dans le scénario central, soit une perte de `r fmt(ENV$perte[1], -3)` à `r fmt(ENV$perte[2], -3)` habitants par rapport à sa population d'avant les déplacements. Le sens de cet écart ne dépend d'aucune hypothèse, mais son ampleur dépend du traitement de Gressier et de Mirebalais. Les départs sont plus nombreux dans les communes où la violence meurtrière des gangs était forte dans les mois qui ont précédé leur départ, une association qui résiste aux variantes et à un test placebo. Les déplacés qui changent de commune privilégient nettement les destinations proches, puis, au-delà d'environ 25 km, les villes les plus peuplées et les moins violentes. Le panel, enfin, ne met pas en évidence d'association robuste entre la violence et le nombre de déplacés hébergés dans une commune d'un *round* à l'autre.
+
+La @sec-litterature situe l'article dans la littérature. La @sec-donnees présente les sources et les mesures. La @sec-correction construit les populations corrigées et leur incertitude. Les sections [-@sec-esda] à [-@sec-robustesse] sont consacrées à l'économétrie spatiale : analyse exploratoire, modèle en coupe, modèle gravitaire, panel et robustesse. La @sec-densite traduit ces associations en écarts de densité, et la @sec-limites en discute les limites.
+
+# Revue de la littérature {#sec-litterature}
+
+## Conflits armés et déplacements forcés
+
+Les travaux sur les déplacements forcés montrent que la violence, subie ou redoutée, est le premier déterminant du départ. À l'échelle des pays, @moore2004 relient les flux de réfugiés et de déplacés à la violence de l'État comme à celle des groupes dissidents. Les études microéconomiques, surtout colombiennes, décrivent un arbitrage des ménages entre la menace qui pèse sur eux et ce qu'ils perdent en partant : terres, revenus, réseaux [@engel2007; @ibanez2008]. À Aceh, @czaika2009 montrent, à l'échelle des villages, que l'intensité locale du conflit et les menaces directes contre les ménages pèsent sur les départs, à côté des déterminants économiques habituels de la migration. Ces travaux portent sur des conflits entre l'État et des insurrections ; la violence haïtienne, exercée par des groupes criminels qui contrôlent des territoires, s'en distingue.
+
+## Violence criminelle et migration
+
+La violence haïtienne se rapproche davantage de celle du crime organisé, objet d'une seconde littérature. Au Mexique, l'intensification de la guerre contre les cartels s'est accompagnée d'une hausse, modérée, des départs depuis les municipalités les plus touchées [@atuesta2016; @basu2017]. En Amérique centrale, @clemens2021 associe les vagues de migration d'enfants vers les États-Unis aux homicides commis dans leurs municipalités d'origine. Ces études portent sur la migration, interne ou internationale, et s'appuient sur des recensements ou des enquêtes ; aucune ne dispose d'une mesure des stocks de déplacés aussi fine dans le temps que celle de la DTM.
+
+Le déplacement forcé par le crime organisé reste lui-même peu étudié. @cantor2014 le souligne pour l'Amérique centrale et le Mexique, et propose de partir des groupes criminels eux-mêmes plutôt que de leurs victimes. Pour Haïti, @kolbe2013 examine, à partir d'un long travail de terrain auprès des membres des groupes armés et des habitants, si la violence des gangs constitue une guerre au sens des conventions de Genève.
+
+## Estimer la population en période de crise
+
+Mesurer ces déplacements à l'échelle de la commune suppose en outre de connaître la population qu'ils redistribuent. Les grilles de population répartissent des totaux administratifs entre des carrés à l'aide de covariables géographiques [@stevens2015; @tatem2017]. Quand les totaux sont anciens, la grille fige la répartition d'une date révolue. Les méthodes « ascendantes », qui estiment la population à partir d'enquêtes locales et d'images satellitaires, s'affranchissent de ces totaux [@wardrop2018], parfois dans un cadre bayésien qui mesure l'incertitude des estimations [@leasure2020], mais demandent des enquêtes que l'insécurité rend impossibles dans les quartiers concernés.
+
+Les données anonymisées de téléphonie mobile échappent à ces deux limites, puisqu'elles suivent les mouvements de population presque en temps réel. Elles ont servi en Haïti après le séisme de 2010 [@bengtsson2011; @lu2012], pour cartographier la population de façon dynamique [@deville2014] et après le séisme de 2015 au Népal [@wilson2016].
+
+## Économétrie spatiale des déplacements
+
+Sur le plan des méthodes, l'article emprunte à l'économétrie spatiale des flux. Les modèles gravitaires estimés par pseudo-maximum de vraisemblance de Poisson admettent les flux nuls [@santos2006] ; @lesage2008 en proposent une version spatiale. @lozano2010 modélisent ainsi les flux de déplacés entre municipalités colombiennes et trouvent qu'ils se dirigent vers les régions les plus peuplées et vers celles où les besoins de base sont le mieux satisfaits. Les modèles de la famille de @elhorst2010 distinguent la dépendance de la variable expliquée, l'influence des caractéristiques des voisins et celle des chocs communs. @gibbons2012 rappellent toutefois que ces modèles décrivent des associations et identifient mal les mécanismes, et l'article s'en tient à cette lecture.
+
+À notre connaissance, aucune étude n'a corrigé les populations communales d'Haïti à partir des fichiers de provenance de la DTM, ni relié ces flux, à l'échelle de la commune, à la violence géolocalisée des gangs datée au moment des départs. L'article fournit les deux, en séparant nettement le produit de données, utile aux acteurs humanitaires, de l'analyse économétrique, qui reste descriptive.
+
+# Données {#sec-donnees}
+
+Six sources ouvertes, toutes harmonisées sur les 140 communes du découpage administratif d'OCHA (codes P-codes communs) [@ocha2024], sont combinées (@tbl-sources).
+
+```{r}
+#| label: tbl-sources
+#| tbl-cap: "Sources des données"
+
+knitr::kable(data.frame(
+  Source = c("OIM, Matrice de suivi des déplacements (DTM)", "OIM, évaluations de base détaillées (rounds 10 à 14)",
+             "WorldPop, Global2 R2025A", "IHSI, estimations de la population", "OCHA, COD-AB",
+             "UCDP, Georeferenced Event Dataset 26.1 et événements candidats 2026"),
+  Contenu = c("PDI par commune d'accueil", "PDI par localité et section communale d'accueil, commune de provenance majoritaire ; retournés",
+              "Population par carré de 100 m ; sert seulement à répartir la population à l'intérieur des communes",
+              "Population, ménages, superficie et densité par commune et section communale",
+              "Limites des 140 communes et des 570 sections communales",
+              "Événements de violence mortelle, géolocalisés, avec leurs auteurs"),
+  Couverture = c("Rounds 0 à 14, avril 2022 – juillet 2026 ; national depuis mai 2024",
+                 "Juin 2025 – juillet 2026, de 1 150 à 1 200 localités par round", "2025",
+                 "2015 et 2024 ; 140 communes", "Communes, sections communales",
+                 paste("Événement par événement, 1989 –", mois_an(S$ucdp_fin), "; 2026 provisoire"))),
+  align = "lll")
+```
+
+*Source* : compilation des auteurs.
+
+**La DTM de l'OIM** [@oim2026] mesure, *round* après *round*, le nombre de personnes déplacées présentes dans chaque localité, qu'elles vivent dans des sites ou en familles d'accueil. Ce sont des stocks : chaque déplacé est compté une fois, dans la localité où il se trouve au moment du *round*, quelle que soit la date de son départ, que les fichiers indiquent pour la majorité des déplacés de chaque localité. La somme des localités d'un *round* reproduit exactement le total national publié par l'OIM. On peut donc additionner les localités d'un même *round*, mais pas les *rounds* entre eux. Ces données proviennent du « suivi des déplacements », l'une des quatre composantes que distingue le cadre méthodologique de la DTM, avec le suivi des flux, l'enregistrement et les enquêtes [@oim2022cadre]. Les évaluations de base y sont emboîtées : celle des zones porte sur de grandes unités administratives, celle des sous-zones descend aux localités et aux quartiers, où elle recense le nombre de déplacés, les raisons et la date de leur déplacement et leur mode d'hébergement. Les chiffres proviennent d'informateurs clés et sont recoupés avec d'autres sources lorsque c'est possible ; ce sont, selon le cadre lui-même, des estimations et des perceptions. Les relevés d'urgence (*Emergency Tracking Tool*, ETT) du même dispositif documentent rapidement un événement donné, sans toujours donner une vue d'ensemble des mouvements d'un lieu ; l'article ne les ajoute pas aux stocks des évaluations de base. La couverture devient nationale à partir du *round* 7 (mai 2024). Les fichiers détaillés indiquent en outre, pour chaque localité d'accueil, sa section communale et la commune d'où provient la majorité des déplacés, la **commune de provenance**, ce qui permet de reconstituer des flux de provenance à destination (@sec-correction).
+
+**La zone métropolitaine de Port-au-Prince** suit, dans tout l'article, la définition de la DTM : sept communes, `r liste_fr(ZM_NOMS)`. Gressier et Kenscoff, qui la jouxtent, n'en font pas partie.
+
+**WorldPop** fournit la population estimée de chaque carré de 100 mètres [@worldpop2025]. Des totaux de population par unité administrative y sont répartis entre les carrés bâtis à l'aide d'une forêt aléatoire qui prédit la densité à partir de variables géographiques [@stevens2015]. Pour Haïti, ces totaux reprennent la répartition des estimations officielles d'avant la crise : en 2025, la part de chaque commune dans la population nationale est celle que lui donne l'IHSI pour 2015, à moins de `r pc(S$wp_ecart, 0)` près pour neuf communes sur dix. Les effectifs utilisés dans l'article sont donc ceux de l'IHSI ; WorldPop ne sert qu'à répartir la population de chaque commune entre ses kilomètres carrés, ce qu'aucune source officielle ne permet. L'IHSI publie aussi des estimations par section communale, mais leur répartition s'écarte trop de celle de WorldPop pour être combinée avec la grille : le rapport entre les deux va de `r fmt(S0$r_sec[[1]], 2)` à `r fmt(S0$r_sec[[3]], 2)` pour neuf sections sur dix. Les sections reçoivent donc la population de la grille.
+
+**L'Institut haïtien de statistique et d'informatique (IHSI)** publie des estimations de la population, des ménages, de la superficie et de la densité de chaque commune et section communale, pour 2015 [@ihsi2015] et pour 2024 [@ihsi2024]. Faute de recensement depuis 2003, les estimations de 2024 partent des projections nationales du Centre latino-américain et caribéen de démographie (CELADE), révisées en 2022 [@ihsi2024]. La population des départements y est répartie selon leur poids de 2015, puis ajustée, au besoin, à l'aide des données de l'OIM sur les déplacés ; celle des communes reprend, à l'intérieur de chaque département, la structure de 2015. Les estimations officielles déplacent donc la population d'un département à l'autre, mais pas d'une commune à l'autre. Entre 2015 et 2024, la population de l'Ouest ne croît que de `r pc(S$g_ouest, 1)`, contre `r pc(S$g_sud, 0)` pour le Sud et `r pc(S$g_nat, 1)` pour l'ensemble du pays. L'article en tire sa **population de base**, celle d'avant les déplacements, soit la structure communale de 2015 portée au total national de 2024. Elle approche l'estimation officielle de 2024 sans son ajustement aux déplacés, puisque la correction de la @sec-correction prend ces derniers en charge à partir des données de l'OIM. Cette population de base suppose que chaque commune a crû au rythme national entre 2015 et 2024 ; pour la zone métropolitaine, cette hypothèse ajoute `r fmt(DEC[["base"]] - DEC[["ihsi15"]], -3)` habitants au niveau de 2015 (@sec-zmpp). Toutes les densités communales sont calculées sur les superficies de l'IHSI.
+
+**La violence des gangs** est mesurée à partir de la base d'événements géolocalisés du programme de données sur les conflits d'Uppsala (UCDP) [@sundberg2013], complétée pour 2026 par ses événements « candidats », publiés chaque mois et encore provisoires [@hegre2020]. Chaque événement y est un épisode de violence organisée ayant fait au moins un mort, daté, situé et attribué à ses protagonistes. En Haïti, ceux-ci sont nommés : la coalition Viv Ansanm, formée en 2024 par l'union des fédérations G9 et G-Pèp, Gran Grif, Grand Ravine, 400 Mawozo, Kokorat san ras [@davies2025]. La violence des gangs regroupe les tueries de civils commises par ces groupes, leurs affrontements avec les forces de l'ordre et les combats entre groupes armés ; seules les violences de l'État contre des civils, où aucun groupe armé n'est en cause, en sont exclues (@tbl-ucdp).
+
+```{r}
+#| label: tbl-ucdp
+#| tbl-colwidths: [30, 16, 11, 43]
+#| tbl-cap: !expr paste0("Violence organisée en Haïti selon l'UCDP, de janvier 2024 à ", mois_an(S$ucdp_fin), ". Événements, décès et principaux auteurs")
+
+cat_ord <- c("Gangs contre civils", "État contre gangs", "Entre groupes armés", "État contre civils")
+tu <- ucdp_ev[date >= as.IDate("2024-01-01"), .(Événements = .N, Décès = sum(morts)), by = categorie]
+tu <- tu[match(cat_ord, categorie)]
+tu[, Part := Décès / sum(Décès[categorie != "État contre civils"])]
+auteurs <- c("Viv Ansanm, Gran Grif, forces de Micanor Altès, Kokorat san ras", "Police et forces armées contre Viv Ansanm",
+             "Affrontements entre gangs ou avec des brigades d'autodéfense", "Police et forces armées")
+tg_ <- tu[categorie != "État contre civils"]
+knitr::kable(data.frame(
+  Catégorie = c("Tueries de civils par des gangs", "Affrontements entre l'État et les gangs", "Combats entre groupes armés",
+                "Violences de l'État contre des civils (exclues)", "Total de la violence des gangs"),
+  `Décès (événements)` = c(paste0(fmt(tu$Décès), " (", fmt(tu$Événements), ")"), paste0(fmt(sum(tg_$Décès)), " (", fmt(sum(tg_$Événements)), ")")),
+  `Part des décès` = c(ifelse(tu$categorie == "État contre civils", "", pc(tu$Part, 0)), "100 %"),
+  `Principaux auteurs` = c(auteurs, ""), check.names = FALSE),
+  align = c("l", "r", "r", "l"))
+```
+
+*Lecture* : de janvier 2024 à `r mois_an(S$ucdp_fin)`, l'UCDP recense `r fmt(tu[categorie == "Gangs contre civils", Décès])` décès dans des tueries de civils commises par des gangs. *Champ* : Haïti, événements de violence organisée ayant fait au moins un mort. *Source* : UCDP, GED 26.1 et événements candidats 2026 ; calculs des auteurs.
+
+L'UCDP ne recense qu'une partie des décès liés aux gangs (@tbl-couverture). Les Nations unies comptent toutes les personnes tuées dans la violence liée aux gangs, y compris lors d'opérations de police, de lynchages ou de règlements de comptes non attribués, à partir de sources multiples [@reuters2024; @ohchr2025; @binuh2026] ; l'UCDP ne retient que les événements attribuables à des acteurs organisés identifiés, avec une estimation prudente du nombre de victimes. Les deux décomptes ne mesurent donc pas la même chose, mais l'écart est considérable : l'UCDP couvre environ `r pc(couv[an == 2023, part], 0)` des décès recensés par l'ONU en 2023, `r pc(couv[an == 2024, part], 0)` en 2024 et `r pc(couv[an == 2025, part], 0)` en 2025. Cette couverture croissante biaise toute comparaison dans le temps du niveau de la violence ; elle pèse moins sur les comparaisons entre communes à une même date, que retiennent les modèles, à condition que la couverture ne varie pas trop d'une commune à l'autre.
+
+```{r}
+#| label: tbl-couverture
+#| tbl-cap: "Décès liés à la violence des gangs selon l'UCDP et selon les Nations unies, 2023 à 2025"
+
+knitr::kable(data.frame(Année = couv$an, `Nations unies (personnes tuées)` = fmt(couv$onu), `UCDP (décès)` = fmt(couv$ucdp),
+                        `dont localisés précisément` = fmt(couv$precis), `Couverture de l'UCDP` = pc(couv$part, 0), check.names = FALSE),
+             row.names = FALSE, align = c("l", "r", "r", "r", "r"))
+```
+
+*Lecture* : en 2024, l'UCDP recense `r fmt(couv[an == 2024, ucdp])` décès liés aux gangs, soit `r pc(couv[an == 2024, part], 0)` des `r fmt(couv[an == 2024, onu])` personnes tuées selon les Nations unies. *Champ* : Haïti ; violence des gangs au sens de l'article (toutes catégories sauf les violences de l'État contre des civils). *Sources* : UCDP ; Nations unies (Reuters, 2024 ; HCDH, 2025 ; BINUH, 2026) ; calculs des auteurs.
+
+Trois choix de mesure découlent de ces limites et des contraintes du calendrier. *Premièrement*, la mesure principale ne retient que les décès des événements localisés au lieu exact ou à proximité, qui représentent plus de `r pc(min(couv$precis / couv$ucdp), 0)` des décès chaque année. Les décès localisés seulement à l'échelle de l'arrondissement ou du département, qu'il faudrait répartir au prorata de la population, créeraient des artefacts (une violence uniforme dans tout un département). *Deuxièmement*, la violence est rapportée à la population de base de la commune, en décès pour 100 000 habitants. *Troisièmement*, elle est datée au moment des départs. Les fichiers de la DTM donnent le mois de départ de la majorité des déplacés de chaque localité. La moitié des déplacés ayant changé de commune sont partis avant `r mois_an(S$dep_med)`, et `r pc(S$dep_avant_fen, 0)` avant août 2025. Une violence mesurée sur les douze mois précédant le *round* 14 (août 2025 – juillet 2026) serait donc postérieure à la plupart des départs qu'elle prétend expliquer. La mesure principale retient, pour chaque commune de provenance, la mortalité des douze mois se terminant au mois de départ de chacune de ses localités, pondérée par le nombre de déplacés ; pour les communes sans départ attribué, la même moyenne est calculée avec la distribution nationale des mois de départ. Le modèle en coupe compare cette mesure à la violence cumulée depuis 2022, à celle des douze mois précédant le *round* et, en placebo, à la violence postérieure au *round* (août et septembre 2026). `r S$n_viol` communes connaissent au moins un décès dans la fenêtre principale (`r S$n_viol_tout` si l'on ajoute les décès répartis au prorata).
+
+```{r}
+#| label: fig-trajectoire
+#| fig-cap: !expr paste0("Personnes déplacées internes recensées par la DTM (A) et décès liés à la violence des gangs par mois selon l'UCDP (B), janvier 2022 – ", mois_an(S$ucdp_fin), " ; 2026 provisoire")
+#| fig-height: 4.8
+
+ac_nat <- ucdp_ev[gang == TRUE & mois >= as.IDate("2022-01-01"), .(morts = sum(morts)), by = mois]
+lim_x  <- as.Date(c("2022-01-01", "2026-10-31"))
+pic_m  <- ac_nat[which.max(morts)]
+der_r  <- nat[.N]
+debut_prov <- as.Date("2026-01-01")
+p1 <- ggplot(nat[date >= as.IDate("2022-01-01")], aes(as.Date(date), pdi_nat / 1e3)) +
+  geom_area(fill = BLEU, alpha = 0.08) +
+  geom_line(colour = BLEU, linewidth = 0.7) +
+  geom_point(shape = 21, fill = BLEU, colour = "white", size = 1.9, stroke = 0.5) +
+  annotate("text", x = as.Date(der_r$date) - 20, y = der_r$pdi_nat / 1e3 + 120, hjust = 1, size = 2.6, colour = INK,
+           label = paste0(fmt(der_r$pdi_nat / 1e6, 2), " million (", mois_an(der_r$date), ")")) +
+  scale_x_date(limits = lim_x, date_labels = "%Y", date_breaks = "1 year", expand = c(0, 0)) +
+  scale_y_continuous(labels = function(x) fmt(x), expand = expansion(c(0, 0.08)), limits = c(0, NA)) +
+  labs(x = NULL, y = NULL, title = "A. Personnes déplacées internes recensées à chaque round", subtitle = "En milliers")
+p2 <- ggplot(ac_nat, aes(as.Date(mois) + 14, morts)) +
+  annotate("rect", xmin = debut_prov, xmax = lim_x[2], ymin = -Inf, ymax = Inf, fill = FOND_SOL) +
+  annotate("text", x = debut_prov + 12, y = pic_m$morts * 0.97, label = "Données provisoires", hjust = 0, vjust = 1,
+           size = 2.4, colour = MUET) +
+  geom_col(fill = ROUGE, width = 22) +
+  annotate("text", x = as.Date(pic_m$mois) - 4, y = pic_m$morts, hjust = 1, vjust = 1, size = 2.6, colour = INK,
+           label = paste0(fmt(pic_m$morts), " décès en ", mois_an(pic_m$mois))) +
+  scale_x_date(limits = lim_x, date_labels = "%Y", date_breaks = "1 year", expand = c(0, 0)) +
+  scale_y_continuous(labels = function(x) fmt(x), expand = expansion(c(0, 0.05))) +
+  labs(x = NULL, y = NULL, title = "B. Décès liés à la violence des gangs selon l'UCDP", subtitle = "Par mois",
+       caption = "Sources : OIM, DTM (rounds 0 à 14) ; UCDP, GED 26.1 et événements candidats 2026.")
+p1 / p2
+```
+
+Les deux séries montent ensemble jusqu'au milieu de 2025 (@fig-trajectoire). Selon l'UCDP, la violence des gangs fait `r fmt(S$morts23)` morts en 2023 et `r fmt(S$morts25)` en 2025, une hausse qui reflète aussi l'amélioration de sa couverture (@tbl-couverture). Le nombre de déplacés est multiplié par plus de cinquante entre avril 2022 et juillet 2026, avec une accélération nette entre mai 2024 et juin 2025, puis se stabilise entre `r fmt(min(nat[date >= as.IDate("2025-12-01")]$pdi_nat) / 1e6, 2)` et `r fmt(max(nat[date >= as.IDate("2025-12-01")]$pdi_nat) / 1e6, 2)` million, alors que les décès mensuels reculent, sous réserve des données provisoires de 2026.
+
+**Le voisinage** est décrit par une matrice de pondération spatiale $W$. La matrice principale relie chaque commune à ses six plus proches voisines, mesurées entre des points situés à l'intérieur de chaque commune ; chaque ligne est normalisée pour sommer à un, si bien que $\sum_j w_{ij} x_j$ est la moyenne de $x$ chez les voisines de la commune $i$. Cette définition donne des voisines aux îles (`r liste_fr(S$iles)`), que la contiguïté laisserait isolées. Les variantes retiennent quatre ou huit voisines, la contiguïté (avec les îles reliées à leur plus proche voisine) et l'inverse de la distance dans un rayon de 60 km.
+
+**Les variables des modèles** sont décrites dans le @tbl-descriptifs. Les départs proviennent du scénario central de correction (@sec-correction), et non des déclarations brutes, qui attribuent à Gressier près de sept fois sa population. Par construction, la règle de la provenance majoritaire ne donne de départs qu'à `r S$n_orig` communes, et les `r 140 - S$n_orig` autres n'en ont aucun. Ces zéros sont structurels, et les modèles de comptage retenus les traitent sans transformation (@sec-econometrie).
+
+```{r}
+#| label: tbl-descriptifs
+#| tbl-colwidths: [44, 9, 10, 12, 12, 13]
+#| tbl-cap: "Statistiques descriptives des variables des modèles en coupe (140 communes, juillet 2026)"
+
+dsc <- function(lab, x, d = 1) data.frame(Variable = lab, Zéros = fmt(sum(x == 0)), Min. = fmt(min(x), d), Médiane = fmt(median(x), d),
+                                          Moyenne = fmt(mean(x), d), Max. = fmt(max(x), 0), check.names = FALSE)
+knitr::kable(rbind(
+  dsc("Départs déclarés (pour 1 000 hab.)", 1000 * cd$depart / cd$pop0),
+  dsc("Départs, scénario central (pour 1 000 hab.)", 1000 * cd$dep_B / cd$pop0),
+  dsc("Arrivées (pour 1 000 hab.)", 1000 * cd$arrivee / cd$pop0),
+  dsc("Violence, fenêtre des départs (décès / 100 000 hab.)", cd$viol),
+  dsc("Violence, 12 mois avant le round 14 (idem)", V$contemp),
+  dsc("Densité de base (hab./km²)", cd$pop0 / cd$km2_ihsi, 0),
+  dsc("Distance au centre de Port-au-Prince (km)", cd$dist_pap_km, 0)), row.names = FALSE, align = c("l", rep("r", 5)))
+```
+
+*Lecture* : `r sum(cd$dep_B == 0)` communes n'ont aucun départ attribué dans le scénario central ; le taux de départ moyen est de `r fmt(mean(1000 * cd$dep_B / cd$pop0), 1)` pour 1 000 habitants, contre `r fmt(mean(1000 * cd$depart / cd$pop0), 1)` avec les déclarations brutes, que Gressier tire vers le haut. *Champ* : 140 communes. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+
+# Correction démographique {#sec-correction}
+
+## Reconstituer les flux de provenance et d'accueil
+
+Les fichiers détaillés de la DTM indiquent, pour chacune des `r fmt(nrow(l_ref))` localités évaluées, le nombre de déplacés et leur commune de provenance majoritaire. En attribuant tous les déplacés d'une localité à cette commune, on obtient une matrice de flux entre `r S$n_orig` communes de provenance et `r S$n_dest` communes d'accueil (*round* 14, juillet 2026). Sur les `r fmt(S$pdi_ref)` déplacés recensés, `r pc(S$intra, 0)` sont restés dans leur commune, dont ils modifient la répartition interne sans en changer le total. Les `r fmt(S$inter)` autres ont changé de commune.
+
+```{r}
+#| label: tbl-flux
+#| tbl-cap: "Principales communes de provenance et d'accueil (déplacés ayant changé de commune, juillet 2026)"
+
+top_d <- cd[order(-depart)][1:8]; top_a <- cd[order(-arrivee)][1:8]
+knitr::kable(data.frame(
+  `Commune de provenance` = top_d$commune, `Départs déclarés` = fmt(top_d$depart), `% pop.` = fmt(100 * top_d$depart / top_d$pop0, 1),
+  `Commune d'accueil` = top_a$commune, `Arrivées` = fmt(top_a$arrivee), `% pop. ` = fmt(100 * top_a$arrivee / top_a$pop0, 1),
+  check.names = FALSE), align = c("l", "r", "r", "l", "r", "r"))
+```
+
+*Lecture* : `r fmt(top_a$arrivee[1])` déplacés venus d'autres communes sont hébergés à `r top_a$commune[1]`, soit `r fmt(100 * top_a$arrivee[1] / top_a$pop0[1], 1)` % de sa population de base. Les pourcentages rapportent les départs ou les arrivées à la population de base de la commune ; ils diffèrent de la variation nette de population (arrivées moins départs) étudiée à la @sec-densite. *Champ* : déplacés ayant changé de commune, départs déclarés avant correction. *Source* : OIM, DTM (*round* 14) ; calculs des auteurs.
+
+Les départs sont très concentrés (@tbl-flux) : `r pc(S$ouest, 0)` proviennent du département de l'Ouest, et la commune de Port-au-Prince en fournit à elle seule `r pc(cd[pcode == "HT0111"]$depart / sum(cd$depart), 0)`. Les arrivées sont au contraire dispersées dans les villes moyennes de province : `r liste_fr(cd[order(-arrivee)][1:7]$commune)`. Les déplacés qui changent de commune parcourent en moyenne `r fmt(S$dist_moy)` km (médiane : `r fmt(S$dist_med)` km), mais `r pc(S$part_25, 0)` d'entre eux s'installent à moins de 25 km de leur commune de provenance (@fig-flux). Le rattachement de nombreux déplacés à Gressier raccourcit ces distances. Sans Gressier ni Mirebalais, la distance moyenne atteint `r fmt(S$dist_moy_sg)` km.
+
+```{r}
+#| label: fig-flux
+#| fig-cap: "Principaux flux de déplacés entre communes (juillet 2026, flux d'au moins 2 000 personnes)`\\horsliste{`{=latex}. Épaisseur des courbes proportionnelle au flux ; surface des cercles proportionnelle au nombre de départs déclarés ou d'arrivées (au moins 2 000)`}`{=latex}"
+#| fig-height: 5.1
+
+fl <- merge(f_ref[origine != destination & pdi >= 2000], cd[, .(origine = pcode, xo = x_km * 1e3, yo = y_km * 1e3)], by = "origine")
+fl <- merge(fl, cd[, .(destination = pcode, xd = x_km * 1e3, yd = y_km * 1e3)], by = "destination")
+noeuds <- rbind(cd[depart >= 2000, .(pcode, commune, x = x_km * 1e3, y = y_km * 1e3, n = depart, type = "Commune de provenance")],
+                cd[arrivee >= 2000, .(pcode, commune, x = x_km * 1e3, y = y_km * 1e3, n = arrivee, type = "Commune d'accueil")])
+noeuds[, type := factor(type, c("Commune de provenance", "Commune d'accueil"))]
+lab_fl <- copy(noeuds)[, etiq := fifelse(pcode %in% c("HT0111", "HT0116", "HT0621", "HT0542", "HT0211", "HT0532", "HT0311",
+                                                     "HT0711", "HT0632", "HT0121") & !duplicated(pcode), commune, "")]
+lab_fl[etiq == "Petite Rivière de l'Artibonite", etiq := "Petite-Rivière"]
+lab_fl[, rayon := 8 * sqrt(n / max(n))]             # les étiquettes évitent les cercles
+ggplot() +
+  geom_sf(data = com_u, fill = FOND_SOL, colour = "white", linewidth = 0.15) +
+  couche_dep() +
+  geom_curve(data = fl[order(pdi)], aes(x = xo, y = yo, xend = xd, yend = yd, linewidth = pdi, alpha = pdi),
+             colour = "#256abf", curvature = 0.22, lineend = "round") +
+  geom_point(data = noeuds[order(-n)], aes(x, y, size = n, fill = type), shape = 21, colour = "white", stroke = 0.4, alpha = 0.92) +
+  geom_text_repel(data = lab_fl, aes(x, y, label = etiq, point.size = rayon), family = POLICE, size = 2.5, colour = INK,
+                  bg.colour = "white", bg.r = 0.12, box.padding = 0.5, point.padding = 0.3, min.segment.length = 0.2,
+                  segment.colour = INK2, segment.size = 0.25, seed = 11, max.overlaps = Inf) +
+  echelle() +
+  scale_linewidth(range = c(0.12, 2.2), guide = "none") + scale_alpha(range = c(0.25, 0.7), guide = "none") +
+  scale_fill_manual(values = c(ROUGE, BLEU), name = NULL,
+                    guide = guide_legend(order = 1, override.aes = list(size = 3.2))) +
+  scale_size_area(max_size = 8, name = "Personnes", breaks = c(2e4, 1e5, 2.5e5), labels = function(x) fmt(x),
+                  guide = guide_legend(order = 2, override.aes = list(fill = MUET))) +
+  coord_carte() + labs(caption = SRC_DTM) + theme_carte +
+  theme(legend.box = "vertical", legend.box.just = "left", legend.spacing.y = unit(4, "pt"))
+```
+
+## Deux provenances incohérentes : Gressier et Mirebalais {#sec-gressier}
+
+::: {.encadre}
+```{=latex}
+\begin{encadre}{Encadré 1 – Gressier et Mirebalais}
+```
+
+::: {.content-visible when-format="html"}
+**Encadré 1 – Gressier et Mirebalais**
+:::
+
+Deux limites de la DTM imposent une correction prudente. D'abord, l'attribution de toute une localité à sa provenance **majoritaire** concentre les départs sur les communes dominantes. Ensuite, la « provenance » est le dernier lieu quitté, qui n'est pas toujours la résidence habituelle. Deux communes en témoignent : les départs déclarés depuis Gressier (`r fmt(cd[pcode == "HT0116"]$depart)` personnes) représentent `r fmt(cd[pcode == "HT0116"]$depart / cd[pcode == "HT0116"]$pop0, 1)` fois sa population de base, et ceux de Mirebalais (`r fmt(cd[pcode == "HT0621"]$depart)`) `r fmt(cd[pcode == "HT0621"]$depart / cd[pcode == "HT0621"]$pop0, 1)` fois la sienne.
+
+**Gressier, lieu de transit**
+
+Gressier se trouve sur la route nationale 2, la sortie sud de la capitale, et les déplacés qui la déclarent comme provenance sont hébergés le long de cette route et au-delà, de Léogâne à Jacmel, Miragoâne et Les Cayes. Une partie d'entre eux venaient du sud-ouest de la capitale (Carrefour, Fontamara, Martissant), d'où la route mène à Gressier, et n'ont fait qu'y transiter. Les communes d'accueil le confirment. Les autres déplacés de la zone métropolitaine qu'elles hébergent, ceux qui déclarent en venir directement, proviennent à `r pc(S$imp[["HT0113"]], 0)` de Carrefour, à `r pc(S$imp[["HT0111"]], 0)` de Port-au-Prince, à `r pc(S$imp[["HT0112"]], 0)` de Delmas et à `r pc(S$imp[["HT0131"]], 0)` seulement de Croix-des-Bouquets, à l'autre extrémité de l'agglomération (chaque commune d'accueil étant pondérée par le nombre de déplacés rattachés à Gressier qu'elle héberge). Les relevés d'urgence de la DTM sur les attaques survenues à Gressier mesurent des départs bien plus modestes, dirigés vers les communes voisines : 4 463 personnes après l'attaque du 11 mai 2024, à 92 % vers d'autres communes de l'Ouest [@oim2024ett42] ; environ 704 personnes en septembre 2026, accueillies à Léogâne (70 %), Petit-Goâve (13 %), Grand-Goâve (9 %) et Gressier même (8 %) [@oim2026ett107]. Après les attaques de l'été 2024, le maire estimait à environ 23 000 le nombre d'habitants ayant fui [@nouvelliste2024]. Les départs réels de Gressier se comptent donc en dizaines de milliers, dans la limite de sa population (`r fmt(cd[pcode == "HT0116"]$pop0, -2)` habitants avant les déplacements). Les dates de déplacement vont dans le même sens : `r pc(S$gr_avant, 0)` des personnes rattachées à Gressier ont quitté leur domicile avant mai 2024, mois de la première grande attaque contre la commune, dont `r pc(S$gr_fev, 0)` en février 2024, au moment de l'escalade des violences dans la capitale. Le dispositif de la DTM se prête mal à ces parcours en plusieurs étapes. Son cadre méthodologique le reconnaît lui-même, puisqu'il juge le suivi des déplacements mieux adapté aux populations dont la localisation présente une certaine stabilité qu'aux populations très mobiles, que mesure le suivi des flux à partir des passages par des points d'observation [@oim2022cadre]. Interrogé dans la localité d'accueil, l'informateur clé rapporte le dernier lieu quitté. Un trajet de Carrefour à Jacmel avec une halte à Gressier est donc rattaché à Gressier.
+
+**Mirebalais, provenance majoritaire**
+
+Le cas de Mirebalais est différent. Parmi les personnes qui en déclarent la provenance, `r pc(S$mi_mars, 0)` sont parties en mars et avril 2025, au moment de l'attaque de la ville, et la commune n'hébergeait que `r fmt(S$mireb_r9)` déplacés en décembre 2024. Les déplacements secondaires n'expliquent donc qu'une petite partie de l'écart, qui tient surtout à l'attribution de localités entières à la provenance majoritaire et, peut-être, à une sous-estimation de la population de la commune. Rien n'indique en particulier que Mirebalais ait servi de lieu de passage aux habitants de Croix-des-Bouquets, sur la même route nationale 3. Leurs départs sont à `r pc(S$cdb_av25, 0)` antérieurs à 2025, `r if (S$cdb_p25 < 0.005) "aucun ne date" else paste0("seuls ", pc(S$cdb_p25, 0), " datent")` du printemps ou de l'été 2025, et ils ont trouvé refuge ailleurs, dans le Sud-Est (`r pc(S$cdb_se, 0)`), le Nord (`r pc(S$cdb_nord, 0)`) et à Delmas (`r pc(S$cdb_dl, 0)`).
+
+```{=latex}
+\end{encadre}
+```
+:::
+
+## Scénarios de correction
+
+La correction part de la population de base, qui décrit la répartition d'avant les déplacements (@sec-donnees). Pour chaque commune, on retranche les départs vers d'autres communes et on ajoute les arrivées. Six scénarios encadrent les choix qu'impose la qualité des données :
+
+- **A, déclarations brutes** : les départs déclarés sont retranchés tels quels, les populations négatives étant ramenées à zéro. Le total national n'est alors plus conservé, ce qui montre l'incohérence des déclarations de Gressier et de Mirebalais ;
+- **B, scénario central** : les départs d'une commune sont plafonnés à 75 % de sa population, soit environ `r fmt(0.75 * cd[pcode == "HT0116"]$pop0, -2)` départs pour Gressier, un ordre de grandeur compatible avec les relevés d'urgence de la DTM ; l'excédent, soit `r fmt(S$exces)` personnes, est réattribué selon sa cause. Celui de Gressier (`r fmt(S$exces_g)`), lieu de transit, revient au sud-ouest de la capitale, d'où partent les déplacés qui l'ont traversée, au prorata des départs déclarés : à Carrefour, et à Port-au-Prince pour la seule part de sa population qui vit dans la section de Martissant (`r pc(S$p_mart, 0)`), la section de provenance n'étant pas connue. Carrefour en reçoit `r fmt(S$g_car, -2)` et Port-au-Prince `r fmt(S$g_pap, -2)`, soit `r pc(S$g_car / S$exces_g, 0)` et `r pc(S$g_pap / S$exces_g, 0)`, `r if (abs(S$g_car / S$exces_g - S$imp_car) < 0.005) "la répartition même que donnent, entre ces deux communes, les déplacés hébergés dans les mêmes communes d'accueil" else paste0(if (abs(S$g_car / S$exces_g - S$imp_car) < 0.03) "très proche de la répartition (" else "à comparer avec la répartition (", pc(S$imp_car, 0), " et ", pc(1 - S$imp_car, 0), ") que donnent, entre ces deux communes, les déplacés hébergés dans les mêmes communes d'accueil")`. Celui de Mirebalais (`r fmt(S$exces_m)`), qui tient à l'attribution de localités entières à la provenance majoritaire, est réparti entre toutes les communes de provenance au prorata de leurs départs, à l'exception de Delmas, Tabarre et Pétion-Ville, communes refuges de l'est de l'agglomération ; la zone métropolitaine en reçoit `r pc(S$m_zmpp, 0)` ;
+- **C** : même plafond, mais l'excédent est réattribué à toutes les autres communes de provenance, au prorata de leurs départs ;
+- **S, surcomptage** : même plafond, mais l'excédent est traité comme un double compte et abandonné. Ce scénario donne une borne basse de la perte des communes de provenance ; il est moins plausible que B, car les déplacés concernés sont physiquement recensés dans leurs localités d'accueil et doivent bien venir de quelque part ;
+- **D, tirages de la matrice des flux** : le scénario B, répété sur des matrices de flux tirées au hasard (@sec-incertitude) ;
+- **E, redistribution intra-communale** : le scénario B, avec les déplacés placés dans leur section communale d'accueil (@sec-intra).
+
+Dans les scénarios A à D et S, chaque carré de 1 km² est multiplié par le rapport entre la population corrigée et la population de base de sa commune. Les indicateurs de concentration calculés sur la grille ne contiennent donc aucune information sur la répartition à l'intérieur des communes, que seul le scénario E modifie.
+
+## Incertitude : tirages et enveloppe globale {#sec-incertitude}
+
+La matrice des flux est incertaine pour deux raisons. La première tient aux provenances, puisque la DTM ne donne que la provenance majoritaire de chaque localité, sans préciser sa part ni la provenance des autres déplacés. La seconde tient à la mesure, car les effectifs reposent sur des informateurs clés et comportent une marge d'erreur. Le scénario D tire `r fmt(B_MC)` matrices plausibles. Dans chacune, la part réelle de la provenance majoritaire est tirée entre 50 et 100 % dans chaque localité ; le reste est réparti entre les autres communes de provenance au prorata de leur poids dans l'ensemble des départs et de leur proximité de la provenance majoritaire, car une erreur d'attribution confond plus souvent des communes voisines que des communes éloignées. L'effectif de chaque localité est affecté d'une erreur multiplicative sans biais, d'écart-type 20 %, à laquelle s'ajoute une erreur commune à toutes les localités d'une même commune d'accueil, d'écart-type 15 %, qui représente les biais propres à une équipe d'enquête ou à un informateur. Le scénario B est appliqué à chaque matrice. L'exercice répond à une recommandation du cadre méthodologique de la DTM, qui invite à indiquer, lorsque c'est possible, le niveau de confiance des données [@oim2022cadre].
+
+Ces tirages ne mesurent qu'une partie de l'incertitude. Les erreurs indépendantes d'une localité à l'autre se compensent quand on les agrège, et l'intervalle qu'elles produisent pour la zone métropolitaine (`r fmt(quantile(mc$zmpp, 0.05) / 1e6, 2)` à `r fmt(quantile(mc$zmpp, 0.95) / 1e6, 2)` millions d'habitants dans 90 % des tirages) est une analyse de sensibilité, pas un intervalle de confiance. L'incertitude principale tient aux choix de correction et à la variabilité des déclarations d'un *round* à l'autre. La population corrigée de Port-au-Prince varie de `r fmt(coh$var_pap[2], 0)` %, `r sgn(coh$var_pap[3])`, `r fmt(coh$var_pap[4], 0)` % puis `r sgn(coh$var_pap[5])` entre deux *rounds* successifs, des écarts bien plus larges que ceux des tirages. Le @tbl-enveloppe rassemble donc ces sources dans une **enveloppe globale** : les trois plafonds (50, 75 et 100 %) croisés avec les six règles de réattribution de l'excédent, le scénario de surcomptage, les tirages D et les *rounds* 10 à 13 corrigés selon le scénario B.
+
+```{r}
+#| label: tbl-enveloppe
+#| tbl-cap: "Enveloppe globale de la population corrigée de la zone métropolitaine (juillet 2026) et de la perte par rapport à la population de base"
+
+lib_env <- c(plafond = "Plafonds (50, 75, 100 %) × règles de réattribution", surcomptage = "Surcomptage (excédent abandonné)",
+             D = paste0("Tirages D (", B_MC, " matrices)"), round = "Rounds 10 à 13 (scénario B)")
+te <- rbind(data.table(Source = unname(lib_env[colnames(ENV$par)]), mn = ENV$par[1, ], mx = ENV$par[2, ]),
+            data.table(Source = "Enveloppe globale", mn = ENV$zm[1], mx = ENV$zm[2]))
+te[, `:=`(Pop = ifelse(abs(mx - mn) < 1, fmt(mn / 1e6, 2), paste0(fmt(mn / 1e6, 2), " à ", fmt(mx / 1e6, 2))),
+          Perte = ifelse(abs(mx - mn) < 1, fmt((I$REF[["zmpp"]] - mn) / 1e3, 0),
+                         paste0(fmt((I$REF[["zmpp"]] - mx) / 1e3, 0), " à ", fmt((I$REF[["zmpp"]] - mn) / 1e3, 0))))]
+knitr::kable(te[, .(Source, `Population corrigée (millions)` = Pop, `Perte (milliers)` = Perte)], align = c("l", "r", "r"))
+```
+
+*Lecture* : selon le plafond et la règle de réattribution retenus, la zone métropolitaine compte de `r fmt(ENV$par[1, "plafond"] / 1e6, 2)` à `r fmt(ENV$par[2, "plafond"] / 1e6, 2)` millions d'habitants en juillet 2026 ; l'enveloppe globale va de `r fmt(ENV$zm[1] / 1e6, 2)` à `r fmt(ENV$zm[2] / 1e6, 2)` millions, pour `r fmt(I$B[["zmpp"]] / 1e6, 2)` millions dans le scénario central. *Champ* : les sept communes de la zone métropolitaine (définition de la DTM). *Sources* : OIM, DTM (*rounds* 10 à 14) ; IHSI ; calculs des auteurs.
+
+## La perte de la zone métropolitaine {#sec-zmpp}
+
+La perte de la zone métropolitaine, le chiffre le plus visible de la correction, mêle trois composantes de nature différente (@tbl-decomposition). La première est la seule observée directement : les départs déclarés depuis les sept communes, nets des arrivées qu'elles reçoivent. Les deux autres viennent de la réattribution des excédents de Gressier et de Mirebalais ; elles représentent ensemble `r pc((DEC[["g"]] + DEC[["m"]]) / (DEC[["base"]] - DEC[["B"]]), 0)` de la perte. À ces trois composantes s'ajoute, en amont, l'hypothèse de la population de base : la croissance de 2015 à 2024 attribuée à la zone, au rythme national, ajoute `r fmt(DEC[["base"]] - DEC[["ihsi15"]], -3)` habitants au niveau officiel de 2015.
+
+```{r}
+#| label: tbl-decomposition
+#| tbl-cap: "Décomposition de la population corrigée de la zone métropolitaine (scénario central, juillet 2026)"
+
+knitr::kable(data.frame(Composante = c("Population officielle de 2015 (IHSI)", "+ Croissance 2015–2024 supposée égale au rythme national",
+    "= Population de base, avant les déplacements", "− Départs déclarés vers d'autres communes", "+ Arrivées depuis d'autres communes",
+    "− Part de l'excédent de Gressier réattribuée à la zone", "− Part de l'excédent de Mirebalais réattribuée à la zone",
+    "= Population corrigée (scénario central)", "Pour mémoire : estimation officielle de 2024 (IHSI)"),
+  Habitants = fmt(c(DEC[["ihsi15"]], DEC[["base"]] - DEC[["ihsi15"]], DEC[["base"]], DEC[["dep"]], DEC[["arr"]], DEC[["g"]], DEC[["m"]],
+                    DEC[["B"]], DEC[["ihsi24"]]), -2), check.names = FALSE), align = c("l", "r"))
+```
+
+*Lecture* : la zone métropolitaine perd `r fmt(DEC[["base"]] - DEC[["B"]], -3)` habitants par rapport à sa population de base, dont `r fmt(DEC[["net"]], -3)` de départs nets déclarés depuis ses communes et `r fmt(DEC[["g"]] + DEC[["m"]], -3)` d'excédents réattribués. *Champ* : les sept communes de la zone métropolitaine. *Sources* : OIM, DTM (*round* 14) ; IHSI ; calculs des auteurs.
+
+Deux conséquences en découlent. D'abord, l'ampleur de la perte dépend du traitement des excédents. Elle va d'environ `r fmt(ENV$perte[1], -3)` habitants si l'excédent est un surcomptage à `r fmt(ENV$perte[2], -3)` dans l'hypothèse la plus défavorable de l'enveloppe ; son sens, lui, ne dépend d'aucune hypothèse, puisque les seuls départs nets déclarés dépassent `r fmt(DEC[["net"]], -4)` habitants. Ensuite, la comparaison avec l'estimation officielle de 2024 doit être datée. L'IHSI a ajusté ses estimations, publiées en juillet 2024, avec les données de l'OIM alors disponibles, soit au plus tard celles du *round* 7 (`r mois_an(S$date7)`, `r fmt(S$pdi7 / 1e6, 2)` million de déplacés), moins de la moitié des `r fmt(S$pdi14 / 1e6, 2)` million de juillet 2026. Le premier *round* pour lequel les fichiers de provenance permettent une correction est le *round* 10 (juin 2025, `r fmt(S$pdi10 / 1e6, 2)` million de déplacés). La zone métropolitaine y compte `r fmt(coh[round == 10, zmpp] / 1e6, 2)` millions d'habitants corrigés, contre `r fmt(S$zm_24 / 1e6, 2)` millions dans l'estimation officielle. L'écart de `r fmt(S$zm_24 - I$B[["zmpp"]], -4)` habitants entre l'estimation officielle et la population corrigée de juillet 2026 mêle donc la correction proprement dite et la croissance du nombre de déplacés depuis la mi-2024.
+
+## Redistribution intra-communale {#sec-intra}
+
+Environ `r pc(S$intra, 0)` des déplacés sont restés dans leur commune, et ceux qui viennent d'ailleurs se concentrent dans des sites et des quartiers d'accueil. La DTM localise chaque localité d'accueil dans l'une des 570 sections communales du pays. Dans le scénario E, les départs d'une commune, y compris ceux qui restent dans la commune, sont retranchés de ses sections au prorata de leur population, puisque leur quartier d'origine n'est pas connu. Les déplacés sont ensuite ajoutés dans la section où ils sont hébergés. Les totaux communaux restent ceux du scénario B, mais leur répartition interne change. `r if (S$secE_neg == 0) "Aucune section n'atteint une population négative." else paste0(S$secE_neg, " sections atteignent une population négative, ramenée à zéro.")`
+
+Cette redistribution déplace le kilomètre carré le plus dense du pays vers la `r S$km_E_section` (`r S$km_E_commune`), à `r fmt(I$E[["km_max"]], -2)` hab./km², contre `r fmt(I$B[["km_max"]], -2)` dans le scénario B. La finesse de la correction reste limitée par la taille des sections urbaines. À Port-au-Prince, une seule section regroupe la plus grande partie de la ville, si bien que la redistribution ne peut pas reproduire la densité réelle des sites de déplacés.
+
+## Comparaison des populations corrigées
+
+```{r}
+#| label: tbl-scenarios
+#| tbl-colwidths: [24, 10, 10, 13, 12, 12, 9, 10]
+#| tbl-cap: !expr paste0("Population de la zone métropolitaine et concentration de la population avant les déplacements (population de base), selon l'estimation officielle de 2024 et selon les scénarios de correction (juillet 2026)`\\horsliste{`{=latex}. Pour le scénario D, médiane sur ", fmt(B_MC), " tirages`}`{=latex}")
+
+off24 <- c(zmpp = cd[zmpp == TRUE, sum(pop_2024)], dens_pap = cd[pcode == "HT0111", pop_2024 / km2_ihsi], total = sum(cd$pop_2024))
+ligne_sc <- function(nom, i) data.frame(Source = nom, Z = fmt(i[["zmpp"]] / 1e6, 2), P = pc(i[["part_zmpp"]]),
+  D = fmt(i[["dens_pap"]], -2), K = fmt(i[["km_max"]], -2), H = pc(i[["part_10k"]]), G = fmt(i[["gini"]], 3), T = fmt(i[["total"]] / 1e6, 2))
+tsc <- rbind(
+  ligne_sc("Base, avant les déplacements", I$REF),
+  data.frame(Source = "IHSI 2024 (officielle)", Z = fmt(off24[["zmpp"]] / 1e6, 2), P = pc(off24[["zmpp"]] / off24[["total"]]),
+             D = fmt(off24[["dens_pap"]], -2), K = "—", H = "—", G = "—", T = fmt(off24[["total"]] / 1e6, 2)),
+  ligne_sc("A, déclarations brutes", I$A), ligne_sc("B, scénario central", I$B), ligne_sc("C, réattribution aux départs", I$C),
+  ligne_sc("S, surcomptage", I$S),
+  data.frame(Source = "D, tirages (médiane)", Z = fmt(median(mc$zmpp) / 1e6, 2), P = pc(median(mc$part_zmpp)), D = fmt(median(mc$dens_pap), -2),
+             K = fmt(median(mc$km_max), -2), H = pc(median(mc$part_10k)), G = fmt(median(mc$gini), 3), T = fmt(median(mc$total) / 1e6, 2)),
+  ligne_sc("E, intra-communale", I$E))
+names(tsc) <- c("Source ou scénario", "Zone métrop. (M hab.)", "Part nationale", "Densité Port-au-Prince (hab./km²)",
+                "km² le plus dense (hab./km²)", "Part > 10\u00a0000 hab./km²", "Gini", "Total (M hab.)")
+knitr::kable(tsc, row.names = FALSE, align = c("l", rep("r", 7)))
+```
+
+*Lecture* : dans le scénario central, la zone métropolitaine compte `r fmt(I$B[["zmpp"]] / 1e6, 2)` millions d'habitants, soit `r pc(I$B[["part_zmpp"]])` de la population nationale. « Part > 10 000 hab./km² » : part de la population vivant dans des carrés de 1 km² de plus de 10 000 habitants ; Gini : concentration de la population entre les km² habités. Scénario D : intervalle à 90 % de `r fmt(quantile(mc$zmpp, 0.05) / 1e6, 2)` à `r fmt(quantile(mc$zmpp, 0.95) / 1e6, 2)` millions pour la zone métropolitaine et de `r fmt(quantile(mc$dens_pap, 0.05), -2)` à `r fmt(quantile(mc$dens_pap, 0.95), -2)` hab./km² pour Port-au-Prince. *Champ* : la zone métropolitaine compte sept communes (`r liste_fr(ZM_NOMS)`), sans Gressier ni Kenscoff ; les autres colonnes portent sur tout le pays. *Sources* : OIM, DTM (*round* 14) ; IHSI ; WorldPop R2025A ; calculs des auteurs.
+
+Les scénarios A à E et S concordent sur le sens de la correction (@tbl-scenarios) ; seul le scénario S traite l'excédent comme un surcomptage :
+
+- **La zone métropolitaine perd environ un quart de sa population de base dans le scénario central.** Elle compte environ `r fmt(S$perte_zmpp, -3)` habitants de moins qu'avant les déplacements (`r pc(S$perte_zmpp / I$REF[["zmpp"]], 0)`), et sa part dans la population nationale passe de `r pc(I$REF[["part_zmpp"]])` à `r pc(I$B[["part_zmpp"]])`. Les scénarios C et D donnent des ordres de grandeur proches ; le scénario S, une perte de `r fmt(I$REF[["zmpp"]] - I$S[["zmpp"]], -3)` habitants seulement (@sec-zmpp).
+- **Les déclarations brutes ne sont pas utilisables telles quelles.** Le scénario A, qui fait disparaître Gressier et vide Mirebalais, crée `r fmt(I$A[["total"]] - I$REF[["total"]], -3)` habitants de trop à l'échelle nationale, preuve que certaines provenances déclarées sont des lieux de transit ou des attributions approximatives.
+- **Les estimations officielles de 2024, établies quand le stock de déplacés était encore inférieur de plus de moitié à celui de juillet 2026, ne pouvaient pas rendre compte du recul de la capitale.** L'IHSI situe la zone métropolitaine à `r millions(off24[["zmpp"]])` d'habitants en 2024, pratiquement son niveau de 2015 (`r millions(S$zm_15)`), car l'ajustement aux déplacements se fait entre départements, et chaque commune de l'Ouest garde son poids de 2015 (@sec-donnees).
+- **La correction réduit mécaniquement les indicateurs de concentration**, car la grille est mise à l'échelle commune par commune. La densité de la commune de Port-au-Prince recule de `r pc(1 - I$B[["dens_pap"]] / I$REF[["dens_pap"]], 0)` ; le kilomètre carré le plus dense passe de `r fmt(I$REF[["km_max"]], -2)` à environ `r fmt(I$B[["km_max"]], -2)` hab./km², et la part de la population vivant à plus de 10 000 hab./km² de `r pc(I$REF[["part_10k"]])` à `r pc(I$B[["part_10k"]])` (@fig-concentration). Seul le scénario E apporte une information sur la répartition à l'intérieur des communes. Jacmel, Les Cayes et Cap-Haïtien, qui n'ont aucun départ attribué, gagnent ensemble `r fmt(I$B[["accueil"]] - I$REF[["accueil"]], -3)` habitants.
+
+```{r}
+#| label: fig-concentration
+#| fig-cap: "Part de la population vivant dans un kilomètre carré au moins aussi dense qu'un seuil donné : population de base (avant les déplacements), scénario central (B) et redistribution intra-communale (E)"
+#| fig-height: 3.4
+
+seuils_d <- 10^seq(2, log10(60000), length.out = 300)
+part_sup <- function(p) { p <- sort(p, decreasing = TRUE); cs <- cumsum(p) / sum(p)
+  vapply(seuils_d, function(d) { k <- sum(p >= d); if (k == 0) 0 else cs[k] }, numeric(1)) }
+series_c <- c("Avant les déplacements (IHSI)", "Corrigée, B (central)", "Corrigée, E (intra-communale)")
+conc <- rbind(data.table(seuil = seuils_d, part = part_sup(grille$pop), serie = series_c[1]),
+              data.table(seuil = seuils_d, part = part_sup(gp$B), serie = series_c[2]),
+              data.table(seuil = seuils_d, part = part_sup(gp$E), serie = series_c[3]))
+conc[, serie := factor(serie, series_c)]
+v10k <- data.table(serie = factor(series_c[1:2], series_c), part = c(I$REF[["part_10k"]], I$B[["part_10k"]]))
+ggplot(conc, aes(seuil, part, colour = serie)) +
+  geom_vline(xintercept = 1e4, colour = AXE, linewidth = 0.4) +
+  geom_line(linewidth = 0.75) +
+  geom_point(data = v10k, aes(x = 1e4), shape = 21, fill = "white", size = 2, stroke = 0.7, show.legend = FALSE) +
+  geom_text(data = v10k, aes(x = 1e4 * c(1.12, 1 / 1.12), label = pc(part)),
+            hjust = c(0, 1), vjust = c(-0.5, 1.5), size = 2.6, colour = INK, family = POLICE) +
+  annotate("text", x = 1e4 / 1.1, y = 0.98, label = "10 000 hab./km²", hjust = 1, vjust = 1, size = 2.4, colour = MUET) +
+  scale_colour_manual(values = c(BLEU, ORANGE, AQUA), name = NULL) +
+  scale_x_log10(breaks = c(100, 300, 1000, 3000, 1e4, 3e4), labels = function(x) fmt(x), expand = c(0.01, 0)) +
+  scale_y_continuous(labels = function(x) paste0(fmt(100 * x), " %"), limits = c(0, 1), expand = c(0, 0.01)) +
+  labs(x = "Densité du kilomètre carré (hab./km², échelle logarithmique)",
+       y = "Part de la population vivant\nà cette densité ou plus", caption = SRC_GRI) +
+  theme(axis.title.y = element_text(size = 7.5))
+```
+
+La carte du solde (@fig-solde) résume la redistribution : une tache rouge compacte autour de la capitale, dans le bas Artibonite et autour de Mirebalais, où sévissent les groupes armés ; presque tout le reste du pays en bleu, avec les soldes les plus élevés dans le Sud, la Grand'Anse, le Sud-Est et l'est du Plateau central.
+
+```{r}
+#| label: fig-solde
+#| fig-cap: "Variation de la population due aux déplacements par commune, scénario central (arrivées moins départs corrigés, pour 1 000 habitants de la population de base, juillet 2026)"
+#| fig-height: 4.4
+
+cl <- cut(1000 * (cd$arrivee - cd$dep_B) / cd$pop0, c(-Inf, -200, -50, -10, 10, 50, 200, Inf),
+          labels = c("moins de −200", "−200 à −50", "−50 à −10", "−10 à 10", "10 à 50", "50 à 200", "plus de 200"))
+ggplot(cbind(com_u, classe = cl)) +
+  geom_sf(aes(fill = classe), colour = "white", linewidth = 0.12) +
+  couche_dep() + couche_villes() + echelle() +
+  scale_fill_manual(values = setNames(DIV, levels(cl)), drop = FALSE, name = "Solde pour 1 000 hab.\n(scénario central)") +
+  coord_carte() + labs(caption = SRC_DTM) + theme_carte
+```
+
+
+## Contrôles de cohérence
+
+Une validation externe suppose une source de population indépendante, postérieure aux déplacements et disponible par commune. Elle n'existe pas. Le dernier recensement date de 2003 ; les estimations officielles sont des projections ; les analyses de la sécurité alimentaire du Cadre intégré de classification de la sécurité alimentaire (IPC) utilisent leurs propres zones et, dans la capitale, ne portent que sur les ménages pauvres et très pauvres [@ipc2021] ; les données de scolarisation ou de consommation d'électricité ne sont pas publiées par commune pour la période. Les contrôles qui suivent vérifient donc seulement la cohérence interne de la correction. Le premier vérifie que les totaux des fichiers détaillés coïncident exactement avec les totaux nationaux publiés par l'OIM pour chacun des *rounds* 10 à 14. Le second applique la correction à chaque *round*. La population corrigée de la zone métropolitaine se situe entre `r millions(min(coh$zmpp))` et `r millions(max(coh$zmpp))` d'habitants de juin 2025 à juillet 2026 (@tbl-coherence), mais celle de Port-au-Prince varie nettement d'un *round* à l'autre, ce que l'enveloppe globale intègre (@sec-incertitude).
+
+```{r}
+#| label: tbl-coherence
+#| tbl-colwidths: [18, 15, 17, 16, 17, 17]
+#| tbl-cap: "Cohérence de la correction d'un round à l'autre (scénario central)"
+
+knitr::kable(data.frame(Round = paste0(coh$round, " (", format(coh$date, "%m/%Y"), ")"), `PDI recensées` = fmt(coh$pdi),
+                        `Ayant changé de commune` = fmt(coh$inter), `Zone métrop. corrigée` = fmt(coh$zmpp),
+                        `Port-au-Prince corrigée` = fmt(coh$pap, -2), `Variation de Port-au-Prince` = ifelse(is.na(coh$var_pap), "—", sgn(coh$var_pap)),
+                        check.names = FALSE),
+             row.names = FALSE, align = c("l", rep("r", 5)))
+```
+
+*Lecture* : au *round* 14, la DTM recense `r fmt(coh[round == 14, pdi])` déplacés, dont `r fmt(coh[round == 14, inter])` ayant changé de commune ; la population corrigée de Port-au-Prince varie de `r sgn(coh[round == 14, var_pap])` par rapport au *round* 13. *Champ* : *rounds* pour lesquels les fichiers de provenance sont publiés. *Sources* : OIM, DTM (*rounds* 10 à 14) ; IHSI ; calculs des auteurs.
+
+
+# Analyse exploratoire spatiale {#sec-esda}
+
+Les variables étudiées sont les départs du scénario central, les arrivées et le solde, rapportés à la population de base de la commune (pour 1 000 habitants), ainsi que la violence des gangs. Pour l'analyse exploratoire, elles sont transformées par l'arc sinus hyperbolique, qui se comporte comme un logarithme pour les valeurs élevées tout en admettant les zéros et les soldes négatifs ; les modèles de la @sec-econometrie portent, eux, sur les effectifs.
+
+## Autocorrélation globale
+
+La dépendance spatiale est forte et ne tient pas au choix du voisinage (@tbl-moran). L'indice de Moran [@moran1950] du solde est compris entre `r fmt(min(mor$net), 2)` et `r fmt(max(mor$net), 2)` selon la matrice de pondération. Il est significatif au seuil de 0,1 % dans tous les cas, comme ceux des départs, des arrivées et de la violence. La violence elle-même est spatialement concentrée (indice de `r fmt(mor[W == names(Ws)[2]]$viol, 2)` avec la matrice principale). La ressemblance des communes voisines peut donc tenir à des déplacements qui se propagent d'une commune à l'autre comme à l'exposition commune à la violence ; l'analyse exploratoire ne permet pas de les distinguer.
+
+```{r}
+#| label: tbl-moran
+#| tbl-cap: "Indice de Moran global et regroupements locaux du solde selon la matrice de pondération (140 communes, juillet 2026)"
+
+knitr::kable(data.frame(Matrice = mor$W, `Départs` = fmt(mor$dep, 2), `Arrivées` = fmt(mor$arr, 2), Solde = fmt(mor$net, 2),
+                        Violence = fmt(mor$viol, 2), `LISA bruts` = mor$brut, `LISA corrigés` = mor$fdr, check.names = FALSE),
+             row.names = FALSE, align = c("l", rep("r", 6)))
+```
+
+*Lecture* : avec la matrice principale, l'indice de Moran du solde vaut `r fmt(mor[W == names(Ws)[2]]$net, 2)` ; `r mor[W == names(Ws)[2]]$fdr` communes forment un regroupement local significatif au seuil de 5 % après correction du taux de fausses découvertes (LISA corrigés ; 9 999 permutations). *Champ* : 140 communes ; départs du scénario central. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+## Regroupements locaux
+
+Les indicateurs locaux d'association spatiale (LISA) [@anselin1995] testent la ressemblance de chaque commune avec ses voisines. Avec 140 tests simultanés, une partie des regroupements « significatifs » au seuil de 5 % sont des faux positifs. Les p-valeurs, obtenues par 9 999 permutations conditionnelles, sont donc corrigées par la procédure de @benjamini1995, qui contrôle le taux de fausses découvertes. La correction élimine une partie des regroupements, d'autant plus que le voisinage est étroit (@tbl-moran).
+
+Avec la matrice principale, `r sum(lengths(S$lisa))` communes restent significatives (@fig-lisa) :
+
+- **un foyer de départ** de `r en_lettres(length(S$lisa[[2]]))` communes, de la capitale au bas Artibonite et au Plateau central (`r liste_fr(S$lisa[[2]])`) ;
+- **`r en_lettres(length(S$lisa[[1]]))` pôles d'accueil**, des communes à solde élevé entourées de communes à solde élevé, pour l'essentiel dans la Grand'Anse (`r liste_fr(S$lisa[[1]])`) ;
+- **`r en_lettres(length(S$lisa[[3]]))` communes d'accueil enclavées dans le foyer de départ** (`r liste_fr(S$lisa[[3]])`)`r if (length(S$lisa[[4]])) paste0(" ;") else "."`
+`r if (length(S$lisa[[4]])) paste0("- **", if (length(S$lisa[[4]]) == 1) "une commune" else paste(en_lettres(length(S$lisa[[4]])), "communes"), " à solde faible au milieu de communes d'accueil** (", liste_fr(S$lisa[[4]]), ").") else ""`
+
+```{r}
+#| label: fig-lisa
+#| fig-cap: "Regroupements spatiaux du solde des déplacements (scénario central) : indicateurs locaux de Moran, 9 999 permutations, seuil de 5 % après correction du taux de fausses découvertes, six plus proches voisins"
+#| fig-height: 4.4
+
+ggplot(cbind(com_u, classe = lisa_cl)) +
+  geom_sf(aes(fill = classe), colour = "white", linewidth = 0.12) +
+  couche_dep() + couche_villes() + echelle() +
+  scale_fill_manual(values = setNames(c("#184f95", "#b4282a", "#9ec5f4", "#f4a9a7", FOND_SOL), levels(lisa_cl)),
+                    drop = TRUE, name = "Regroupement local") +
+  coord_carte() + labs(caption = SRC_DTM) + theme_carte
+```
+
+# Modèle spatial en coupe {#sec-econometrie}
+
+## Spécification
+
+Les départs et les arrivées sont des effectifs, nuls dans de nombreuses communes. On les modélise directement par un modèle de comptage, estimé par pseudo-maximum de vraisemblance de Poisson (PPML), qui admet les zéros et ne dépend pas de l'unité de mesure [@santos2006]. Pour chaque commune $i$, l'espérance du nombre de départs (ou d'arrivées) $y_i$ s'écrit :
+$$
+\mathbb{E}[y_i] = P_i \exp\left(\alpha + \beta_1 v_i + \theta_1 \sum_j w_{ij} v_j + \beta_2 d_i + \theta_2 \sum_j w_{ij} d_j + \beta_3 \ell_i\right),
+$$
+où $P_i$ est la population de base, qui joue le rôle d'exposition ; $v_i$ la violence des gangs dans la commune, mesurée par $\ln(1 + m_i)$, $m_i$ étant le nombre de décès localisés précisément pour 100 000 habitants sur les douze mois se terminant au mois des départs (@sec-donnees) ; $d_i$ le logarithme de la densité de base ; $\ell_i$ le logarithme de la distance au centre de Port-au-Prince ; $w_{ij}$ les poids de la matrice de voisinage. Les départs sont ceux du scénario central de correction ; les déclarations brutes servent de comparaison.
+
+Cette spécification est de type SLX : elle retient l'influence des caractéristiques des communes voisines ($\theta$), mais ni la dépendance de la variable expliquée ($Wy$) ni celle des erreurs ($Wu$). Avec une seule matrice de voisinage, un coefficient de dépendance spatiale $\rho$ ne distingue pas une propagation des départs d'une commune à l'autre d'une exposition à des chocs communs [@gibbons2012], et les diagnostics des modèles linéaires ne concordent pas sur la nécessité d'en imposer un pour les départs (annexe A). Dans un SLX, les effets se lisent directement : l'**effet direct** de la violence est $\beta_1$, l'**effet indirect**, associé à la violence moyenne des voisines, est $\theta_1$, et l'**effet total** leur somme. Ce sont des élasticités par rapport à $1 + m$. Une hausse de 10 % de $1 + m$ multiplie l'espérance des départs par $1{,}1^{\beta}$. Les écarts-types sont robustes à l'hétéroscédasticité. Ceux de @conley1999, qui admettent une corrélation des erreurs entre communes distantes de moins de 50 km, ont aussi été calculés mais ne sont pas retenus. `r if (S$conley_petit) "Ils sont ici plus petits que les écarts-types robustes, alors qu'une corrélation positive entre communes voisines devrait les rendre plus grands. " else ""`Avec seulement 140 communes et un modèle qui compare chaque commune à ses voisines, leur estimation est instable. Toute l'inférence repose donc sur les écarts-types robustes, qui ne tiennent pas compte d'une éventuelle corrélation spatiale des résidus.
+
+## Résultats
+
+```{r}
+#| label: tbl-coupe
+#| tbl-cap: "Violence des gangs, départs et arrivées : modèle de Poisson SLX (PPML, 140 communes, juillet 2026)`\\horsliste{`{=latex}. Coefficients ; écarts-types robustes à l'hétéroscédasticité entre parenthèses. *** p < 0,01 ; ** p < 0,05 ; * p < 0,1`}`{=latex}"
+
+cel <- function(m, v) { x <- coeftable(m); c(paste0(fmt(x[v, 1], 2), etoiles(x[v, 4])), paste0("(", fmt(x[v, 2], 2), ")")) }
+cel_t <- function(E, e) { r <- E[effet == e]; c(paste0(fmt(r$est, 2), etoiles(r$p)), paste0("(", fmt(r$se, 2), ")")) }
+lab_v <- c(lv = "Violence de la commune (effet direct)", W_lv = "Violence des voisines (effet indirect)",
+           ldens = "Densité de la commune (log)", W_ldens = "Densité des voisines (log)", ldist = "Distance à Port-au-Prince (log)")
+tco <- do.call(rbind, lapply(names(lab_v), function(v) data.frame(Variable = c(lab_v[[v]], ""),
+  `Départs (scénario central)` = cel(m_dep, v), `Départs déclarés (bruts)` = cel(m_brut, v), `Arrivées` = cel(m_arr, v), check.names = FALSE)))
+tco <- rbind(tco[1:4, ], data.frame(Variable = c("Effet total de la violence", ""), `Départs (scénario central)` = cel_t(E_dep, "total"),
+             `Départs déclarés (bruts)` = cel_t(E_brut, "total"), `Arrivées` = cel_t(E_arr, "total"), check.names = FALSE), tco[5:10, ])
+tco <- rbind(tco, data.frame(Variable = c("Moran des résidus de Pearson (p)", "Pseudo-R²", "Communes"),
+  `Départs (scénario central)` = c(fmt_p(S$moran_dep), fmt(r2(m_dep, "pr2"), 3), "140"),
+  `Départs déclarés (bruts)` = c("", fmt(r2(m_brut, "pr2"), 3), "140"),
+  `Arrivées` = c(fmt_p(S$moran_arr), fmt(r2(m_arr, "pr2"), 3), "140"), check.names = FALSE))
+knitr::kable(tco, row.names = FALSE, align = c("l", "r", "r", "r"))
+```
+
+*Lecture* : à densité et distance égales, une hausse de 10 % de (1 + mortalité liée aux gangs) dans une commune est associée à `r fmt(dix(ef(E_dep, "direct")$est), 1)` % de départs de plus (1,1 à la puissance `r fmt(ef(E_dep, "direct")$est, 2)`). Variable expliquée : nombre de départs ou d'arrivées ; exposition : population de base ; violence : décès localisés précisément pour 100 000 habitants, 12 mois se terminant au mois des départs, en ln(1 + m). *Champ* : 140 communes ; six plus proches voisins. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+Le @tbl-coupe se lit ainsi :
+
+- **Les départs sont plus nombreux là où la violence était forte avant le départ.** L'effet direct est positif et significatif (`r fmt(ef(E_dep, "direct")$est, 2)`, `r p_txt(ef(E_dep, "direct")$p)`). La violence des communes voisines est elle aussi associée à davantage de départs (effet indirect de `r fmt(ef(E_dep, "indirect")$est, 2)`, `r p_txt(ef(E_dep, "indirect")$p)`). L'effet total atteint `r fmt(ef(E_dep, "total")$est, 2)` (`r p_txt(ef(E_dep, "total")$p)`). Ce résultat rejoint les travaux sur les déplacements forcés, où la violence subie ou redoutée est le premier motif de départ [@engel2007; @ibanez2008; @czaika2009].
+- **La présence d'une violence meurtrière compte davantage que son intensité.** Dans les communes touchées, la mortalité médiane est de `r fmt(S$v_med, 1)` décès pour 100 000 habitants ; à ce niveau, le modèle associe `r fmt(S$mult_med, 1)` fois plus de départs qu'en l'absence de violence. Les classes de mortalité le confirment. Par rapport aux communes sans décès, les coefficients des communes à moins de 5, de 5 à 20 et à plus de 20 décès pour 100 000 habitants sont proches (`r liste_fr(fmt(coef(m_cl_dep)[grep("classe_v", names(coef(m_cl_dep)))], 2))`). La relation tient pour une large part au contraste entre communes touchées et épargnées, dont la plupart n'ont aucun départ attribué (@sec-donnees).
+- **Les communes violentes reçoivent moins de déplacés.** L'effet direct de la violence sur les arrivées est négatif (`r fmt(ef(E_arr, "direct")$est, 2)`, `r p_txt(ef(E_arr, "direct")$p)`). L'effet total, `r if (ef(E_arr, "total")$est < 0) "également négatif" else "positif"` (`r fmt(ef(E_arr, "total")$est, 2)`), `r if (ef(E_arr, "total")$p < 0.05) "est significatif" else if (ef(E_arr, "total")$p < 0.1) "n'est significatif qu'au seuil de 10 %" else "n'est pas significatif"` (`r p_txt(ef(E_arr, "total")$p)`). Les résidus restent corrélés dans l'espace (Moran, `r p_txt(S$moran_arr)`), ce dont les écarts-types robustes ne tiennent pas compte ; les p-valeurs des arrivées sont donc à lire avec prudence. L'accueil a une géographie propre que les variables du modèle ne captent pas, et que le modèle gravitaire précise (@sec-gravite).
+- **La correction de Gressier ne modifie que l'effet des voisines.** Avec les départs déclarés bruts, l'effet direct est du même ordre (`r fmt(ef(E_brut, "direct")$est, 2)`), mais l'effet indirect disparaît (`r fmt(ef(E_brut, "indirect")$est, 2)`, `r p_txt(ef(E_brut, "indirect")$p)`). En concentrant sur Gressier des départs venus du sud-ouest de la capitale, les déclarations brutes brouillent le lien entre les départs d'une commune et la violence de ses voisines.
+
+## Calendrier de la violence et test placebo
+
+```{r}
+#| label: tbl-calendrier
+#| tbl-colwidths: [56, 22, 22]
+#| tbl-cap: "Effet de la violence des gangs sur les départs (scénario central) selon la période de mesure de la violence (PPML-SLX, 140 communes)`\\horsliste{`{=latex}. Écarts-types robustes entre parenthèses. *** p < 0,01 ; ** p < 0,05 ; * p < 0,1`}`{=latex}"
+
+lc <- function(lab, E) data.frame(Mesure = lab, Direct = paste0(fmt(ef(E, "direct")$est, 2), etoiles(ef(E, "direct")$p), " (", fmt(ef(E, "direct")$se, 2), ")"),
+                                  Total = paste0(fmt(ef(E, "total")$est, 2), etoiles(ef(E, "total")$p), " (", fmt(ef(E, "total")$se, 2), ")"))
+tca <- rbind(lc("12 mois se terminant au mois des départs (principale)", E_dep), lc("Cumul de janvier 2022 à juillet 2026", E_cum),
+             lc("12 mois précédant le round 14 (août 2025 – juillet 2026)", E_con), lc("Placebo : août et septembre 2026, seule", E_fut),
+             data.frame(Mesure = "Placebo joint : violence principale | violence postérieure",
+                        Direct = paste0(fmt(pl2["lv", 1], 2), etoiles(pl2["lv", 4]), " | ", fmt(pl2["l_futur", 1], 2), etoiles(pl2["l_futur", 4])), Total = "—"))
+knitr::kable(tca, row.names = FALSE, align = c("l", "r", "r"))
+```
+
+*Lecture* : la violence postérieure au *round* 14, seule, n'est pas associée aux départs (`r fmt(ef(E_fut, "direct")$est, 2)`, `r p_txt(ef(E_fut, "direct")$p)`). *Champ* : 140 communes ; violence en ln(1 + décès pour 100 000 habitants) sur chaque période. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+L'association ne tient pas au choix de la fenêtre (@tbl-calendrier). La violence cumulée depuis 2022 et celle des douze mois précédant le *round* donnent des effets totaux proches de la mesure principale (`r fmt(ef(E_cum, "total")$est, 2)` et `r fmt(ef(E_con, "total")$est, 2)`), ce qui s'explique par la persistance de la géographie de la violence. Le test placebo va dans le sens attendu : la violence d'août et septembre 2026, postérieure à tous les départs recensés, n'est pas associée aux départs ; introduite en même temps que la mesure principale, elle prend un signe négatif`r if (pl2["l_futur", 4] < 0.05) " et significatif" else ""` (`r fmt(pl2["l_futur", 1], 2)`, `r p_txt(pl2["l_futur", 4])`), tandis que la violence passée garde un effet positif et significatif (`r fmt(pl2["lv", 1], 2)`, `r p_txt(pl2["lv", 4])`). Enfin, la probabilité qu'une commune soit une commune de provenance, estimée par un modèle logit, augmente elle aussi avec sa violence (`r fmt(coeftable(m_logit)["lv", 1], 2)`, `r p_txt(coeftable(m_logit)["lv", 4])`). La partie binaire du processus, celle qui fait passer une commune de zéro à un nombre positif de départs, va dans le même sens que le modèle de comptage.
+
+## Grandeurs naturelles
+
+```{r}
+#| label: tbl-grandeurs
+#| tbl-cap: "Effets de la violence des gangs en grandeurs naturelles (PPML-SLX, 140 communes) : variation des départs ou des arrivées associée à une hausse de 10 % de (1 + mortalité), avec intervalle à 90 %"
+
+gn <- function(lab, E, e) { r <- E[effet == e]; data.frame(Variable = lab, Effet = e,
+  Variation = paste0(sgn(dix(r$est)), " [", fmt(dix(r$est - 1.645 * r$se), 1), " ; ", fmt(dix(r$est + 1.645 * r$se), 1), "]")) }
+knitr::kable(rbind(gn("Départs (scénario central)", E_dep, "direct"), gn("", E_dep, "total"),
+                   gn("Départs, sans Gressier ni Mirebalais", E_sgm, "direct"), gn("", E_sgm, "total"),
+                   gn("Arrivées", E_arr, "direct"), gn("", E_arr, "total")),
+             row.names = FALSE, col.names = c("Variable", "Effet", "Variation en % [intervalle à 90 %]"), align = c("l", "l", "r"))
+```
+
+*Lecture* : une hausse de 10 % de (1 + mortalité) dans une commune est associée à `r sgn(dix(ef(E_dep, "direct")$est))` de départs. L'élasticité porte sur 1 + la mortalité, non sur la mortalité elle-même : pour une commune sans violence, une hausse de 10 % de 1 + m correspond à un passage de 0 à 0,1 décès pour 100 000 habitants. Les effets des équations des départs et des arrivées, estimées séparément, ne s'additionnent pas pour donner un solde. *Champ* : 140 communes (138 sans Gressier ni Mirebalais). *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+Les effets restent du même ordre sans Gressier ni Mirebalais (@tbl-grandeurs), dont les départs sont plafonnés par la correction. L'association ne tient donc pas à ces deux communes.
+
+## Comparaison des spécifications spatiales {#sec-comparaison}
+
+Le modèle de comptage SLX n'est qu'une des formes possibles. L'annexe A estime, sur les taux de départ et d'arrivée transformés par l'arc sinus hyperbolique, les huit spécifications que l'on obtient en combinant trois formes d'interaction spatiale [@elhorst2010; @elhorst2014] : la variable expliquée des communes voisines ($Wy$, paramètre $\rho$), leurs caractéristiques ($WX$, paramètres $\theta$) et les chocs non observés qui leur sont communs ($Wu$, paramètre $\lambda$). Ce sont les moindres carrés ordinaires (MCO), le SLX [@halleck2015], le SAR, le SEM, le SAC [@kelejian1998], le modèle de Durbin spatial (SDM), le SDEM et le modèle général d'emboîtement (GNS) de @manski1993. Trois enseignements en ressortent. L'effet direct de la violence sur les départs est positif et significatif au seuil de 1 % dans les huit spécifications, entre `r fmt(min(cmp$dep$dir), 2)` et `r fmt(max(cmp$dep$dir), 2)`. Le critère d'Akaike classe le `r cmp$dep[which.min(aic), modele]` en tête pour les départs et le `r cmp$arr[which.min(aic), modele]` pour les arrivées ; les tests du rapport de vraisemblance rejettent la restriction du SLX linéaire au profit des modèles qui ajoutent $Wy$ ou $Wu$, signe d'une dépendance spatiale résiduelle dont les écarts-types robustes du modèle principal ne tiennent pas compte. Le modèle général, enfin, est mal identifié. Pour les départs, ses paramètres $\rho$ et $\lambda$ prennent des signes opposés (`r fmt(S$gns_rho[["dep"]], 2)` et `r fmt(S$gns_lambda[["dep"]], 2)`) et se compensent [@elhorst2010; @gibbons2012] ; pour les arrivées, aucun des deux n'est significatif (`r fmt(S$gns_rho[["arr"]], 2)` et `r fmt(S$gns_lambda[["arr"]], 2)`). Avec une seule matrice de voisinage, la dépendance de la variable expliquée et celle des erreurs engendrent des corrélations presque identiques entre communes voisines, que les données ne parviennent pas à départager. Le modèle de comptage SLX est retenu parce qu'il traite les effectifs nuls sans transformation, que ses effets ne dépendent pas de l'unité de mesure et qu'il n'impose pas un paramètre $\rho$ que les données ne permettent pas d'interpréter.
+
+
+# Modèle gravitaire {#sec-gravite}
+
+## Spécification et résultats
+
+Le modèle en coupe décrit des communes. La matrice des flux permet d'aller plus loin et de modéliser le choix de destination de ceux qui partent. Pour chaque commune de provenance $o$ et chaque destination possible $d$, le nombre de déplacés $F_{od}$ suit un modèle gravitaire estimé par PPML, qui admet les flux nuls [@santos2006] :
+$$
+\mathbb{E}[F_{od}] = \exp\left(\alpha_o + \mu_d + \delta \ln \text{dist}_{od} + \gamma_1 \ln P_d + \gamma_2 v_d + \gamma_3 \ln \text{dens}_d + \gamma_4 \text{dép}_{od} + \gamma_5 \text{ZM}_d\right),
+$$
+où $\alpha_o$ est un effet fixe de la commune de provenance, qui absorbe tout ce qui pousse au départ ; $P_d$, $v_d$ et $\text{dens}_d$ la population, la violence et la densité de la destination ; $\text{dép}_{od}$ une indicatrice de même département et $\text{ZM}_d$ une indicatrice de destination dans la zone métropolitaine. Les colonnes 1 et 2 du @tbl-gravite décrivent l'attraction relative des destinations, à provenance donnée [@lesage2008]. La colonne 3 ajoute un effet fixe de destination $\mu_d$, qui absorbe toutes les caractéristiques de la destination, y compris celles que le modèle ne mesure pas ; seuls les termes qui dépendent du couple, la distance et le même département, restent identifiés. La colonne 4 ajoute l'option de rester dans sa commune (déplacés hébergés dans leur commune de provenance), avec une distance interne égale aux deux tiers du rayon de la commune et une indicatrice de même commune.
+
+Les variables varient selon la provenance comme selon la destination. Les écarts-types sont donc regroupés dans les deux dimensions [@cameron2011]. Il n'y a toutefois que `r S$n_orig` communes de provenance, trop peu pour que les écarts-types regroupés soient fiables [@cameron2008]. Pour la colonne 2, les p-valeurs sont aussi calculées par un *wild cluster bootstrap* par commune de provenance, fondé sur le score [@kline2012], sous l'hypothèse nulle, avec les pondérations à six points de @webb2023 adaptées aux petits nombres de grappes (9 999 tirages).
+
+```{r}
+#| label: tbl-gravite
+#| tbl-cap: "Choix de destination des déplacés : modèle gravitaire (PPML, juillet 2026)`\\horsliste{`{=latex}. Écarts-types regroupés par provenance et par destination entre parenthèses ; entre crochets, p-valeur du wild cluster bootstrap par provenance (colonne 2). Étoiles : écarts-types regroupés. *** p < 0,01 ; ** p < 0,05 ; * p < 0,1`}`{=latex}"
+
+ct <- function(m, v, pw = NULL) { x <- coeftable(m); if (!v %in% rownames(x)) return(c("", "", ""))
+  c(paste0(fmt(x[v, 1], 2), etoiles(x[v, 4])), paste0("(", fmt(x[v, 2], 2), ")"), if (is.null(pw)) "" else paste0("[", fmt_p(pw[[v]]), "]")) }
+vg <- c(ldist = "Distance (log)", lpopd = "Population de la destination (log)", lviold = "Violence à destination",
+        ldensd = "Densité de la destination (log)", meme_dep = "Même département", zmppd = "Destination dans la zone métropolitaine",
+        meme_com = "Même commune (rester)")
+tg <- do.call(rbind, lapply(names(vg), function(v) {
+  data.frame(Variable = c(vg[[v]], "", ""), `(1)` = ct(g1, v), `(2)` = ct(g2, v, pw2), `(3)` = ct(g3, v), `(4)` = ct(g4, v), check.names = FALSE) }))
+tg <- tg[!(tg$Variable == "" & apply(tg[, -1], 1, function(r) all(r == ""))), ]
+tg <- rbind(tg, data.frame(Variable = c("Effets fixes", "Couples provenance–destination", "Pseudo-R²"),
+                           `(1)` = c("provenance", fmt(nobs(g1)), fmt(r2(g1, "pr2"), 3)), `(2)` = c("provenance", fmt(nobs(g2)), fmt(r2(g2, "pr2"), 3)),
+                           `(3)` = c("prov. + dest.", fmt(nobs(g3)), fmt(r2(g3, "pr2"), 3)), `(4)` = c("prov. + dest.", fmt(nobs(g4)), fmt(r2(g4, "pr2"), 3)),
+                           check.names = FALSE))
+knitr::kable(tg, row.names = FALSE, align = c("l", "r", "r", "r", "r"))
+```
+
+*Lecture* : à provenance donnée, une destination 10 % plus peuplée reçoit environ `r fmt(S$pop10, 1)` % de déplacés en plus (1,1 à la puissance `r fmt(coef(g2)[["lpopd"]], 2)`, colonne 2). Les colonnes 3 et 4 comptent moins de couples, car les effets fixes écartent les destinations qui ne reçoivent aucun déplacé des communes de provenance. *Champ* : `r S$n_orig` communes de provenance et 140 destinations ; colonne 4 : y compris les déplacés restés dans leur commune. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+Les résultats (@tbl-gravite) complètent ceux du modèle en coupe :
+
+- **Les grandes villes attirent.** À provenance donnée, un écart de 10 % de population entre deux destinations se traduit par environ `r fmt(S$pop10, 1)` % de déplacés en plus vers la plus peuplée, un résultat qui résiste au bootstrap (`r p_txt(pw2[["lpopd"]])`). Ces villes offrent sans doute davantage de réseaux familiaux, de services et de marchés.
+- **`r if (VIOL_SUR) "Les destinations violentes reçoivent moins de déplacés." else "Les destinations violentes semblent recevoir moins de déplacés, mais le résultat est fragile."`** À provenance et distance données, une destination où la violence des gangs était plus meurtrière dans la fenêtre des départs reçoit moins de déplacés (`r fmt(coef(g2)[["lviold"]], 2)`, `r if (p_txt(pvalue(g2)[["lviold"]]) == p_txt(pw2[["lviold"]])) paste(p_txt(pw2[["lviold"]]), "avec les écarts-types regroupés comme avec le bootstrap") else paste0(p_txt(pvalue(g2)[["lviold"]]), " avec les écarts-types regroupés, ", p_txt(pw2[["lviold"]]), " avec le bootstrap")`). `r if (VIOL_SUR) "Le modèle en coupe donnait la même indication commune par commune ; le modèle gravitaire la confirme flux par flux." else "Le petit nombre de communes de provenance ne permet pas de l'affirmer avec certitude."`
+- **La proximité domine à destination donnée.** Avec des effets fixes de provenance seulement, la distance a un effet modéré (`r fmt(coef(g2)[["ldist"]], 2)`, `r p_txt(pvalue(g2)[["ldist"]])`) que le bootstrap ne confirme pas (`r p_txt(pw2[["ldist"]])`). Mais ce coefficient mêle deux choses : les villes les plus attractives sont souvent éloignées. Une fois toutes les caractéristiques des destinations absorbées par leurs effets fixes (colonne 3), la distance pèse beaucoup (`r fmt(coef(g3)[["ldist"]], 2)`). À destination donnée, les communes proches envoient bien plus de déplacés que les communes éloignées. Les déplacés ne « partent » donc pas « loin » par préférence : `r pc(S$part_25, 0)` de ceux qui changent de commune s'installent à moins de 25 km, et les départs lointains se dirigent vers les grandes villes de province.
+- **La capitale repousse, mais l'effet est incertain.** Une destination dans la zone métropolitaine reçoit `r pc(1 - exp(coef(g2)[["zmppd"]]), 0)` de déplacés en moins, à caractéristiques égales (`r fmt(coef(g2)[["zmppd"]], 2)`) ; le bootstrap ne le confirme pas (`r p_txt(pw2[["zmppd"]])`).
+- **Rester dans sa commune est moins fréquent que la seule proximité ne le prédit.** Dans la colonne 4, l'indicatrice de même commune est négative (`r fmt(coef(g4)[["meme_com"]], 2)`). À distance interne donnée, une part des déplacés quitte sa commune plutôt que de s'y réinstaller.
+
+## Robustesse de l'effet de la distance
+
+```{r}
+#| label: tbl-distance
+#| tbl-colwidths: [64, 13, 11, 12]
+#| tbl-cap: "Robustesse de l'effet de la distance (modèle gravitaire)`\\horsliste{`{=latex}. Écarts-types regroupés par provenance et par destination ; p-valeur du wild cluster bootstrap par provenance lorsqu'elle est calculée. *** p < 0,01 ; ** p < 0,05 ; * p < 0,1`}`{=latex}"
+
+dist_ligne <- function(lab, m, v, pw = NA) { x <- coeftable(m)
+  data.table(Spécification = lab, Coef = paste0(fmt(x[v, 1], 2), etoiles(x[v, 4])), ET = fmt(x[v, 2], 2), PW = if (is.na(pw)) "—" else fmt_p(pw)) }
+set.seed(3)
+td <- rbind(dist_ligne("Effets fixes de provenance, centres géométriques (colonne 2)", g2, "ldist", pw2[["ldist"]]),
+            dist_ligne("Effets fixes de provenance, centres de population", gpc, "ldistp", wcb(replace(X2, 1, "ldistp"), "ldistp")),
+            dist_ligne("Effets fixes de provenance, sans Gressier ni Mirebalais", gx1, "ldist", wcb(X2, "ldist", od_x)),
+            dist_ligne("Effets fixes de provenance et de destination (colonne 3)", g3, "ldist"),
+            dist_ligne("Effets fixes de provenance et de destination, sans Gressier ni Mirebalais", gx, "ldist"),
+            data.table(Spécification = "Forme quadratique : élasticité à la distance médiane des flux", Coef = paste0(fmt(el_q, 2), etoiles(2 * pnorm(-abs(el_q / se_q)))),
+                       ET = fmt(se_q, 2), PW = "—"))
+cb <- coeftable(gb)[1:3, ]; cbd <- coeftable(gbd)[1:3, ]
+td <- rbind(td, data.table(Spécification = paste("Classe", sub("classe::", "", rownames(cb)), "(réf. moins de 25 km), effets fixes de provenance"),
+                           Coef = paste0(fmt(cb[, 1], 2), etoiles(cb[, 4])), ET = fmt(cb[, 2], 2), PW = "—"),
+                data.table(Spécification = paste("Classe", sub("classe::", "", rownames(cbd)), "(réf. moins de 25 km), effets fixes de provenance et de destination"),
+                           Coef = paste0(fmt(cbd[, 1], 2), etoiles(cbd[, 4])), ET = fmt(cbd[, 2], 2), PW = "—"))
+names(td) <- c("Spécification", "Coefficient", "Écart-type", "p bootstrap")
+knitr::kable(td, row.names = FALSE, align = c("l", "r", "r", "r"))
+```
+
+*Lecture* : sans Gressier ni Mirebalais comme communes de provenance, le coefficient de la distance vaut `r fmt(coef(gx1)[["ldist"]], 2)` avec des effets fixes de provenance (`r p_txt(pvalue(gx1)[["ldist"]])` avec les écarts-types regroupés) et `r fmt(coef(gx)[["ldist"]], 2)` avec des effets fixes de provenance et de destination (`r p_txt(pvalue(gx)[["ldist"]])`). Les deux valeurs p d'une même ligne (écarts-types regroupés dans les étoiles, bootstrap dans la dernière colonne) diffèrent par construction. *Champ* : couples provenance–destination entre communes différentes. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+Le @tbl-distance précise la forme de la relation. Avec des effets fixes de provenance, les destinations situées entre 25 et 50 km reçoivent `r fmt(-S$cl_25[1], 0)` % de déplacés de moins que les plus proches, à caractéristiques égales, mais au-delà, l'éloignement supplémentaire ne compte presque plus (`r fmt(-S$cl_25[2], 0)` % de moins entre 50 et 100 km, `r fmt(-S$cl_25[3], 0)` % au-delà de 100 km) ; la forme quadratique le confirme, puisque l'élasticité à la distance médiane des flux n'est pas significative (`r fmt(el_q, 2)`). Avec des effets fixes de destination, la décroissance est encore plus marquée. Au-delà d'environ 25 km, à provenance donnée, la taille de la destination pèse donc davantage que la distance. L'effet modéré de la distance dans la colonne 2 tient largement à Gressier et à Mirebalais. Sans elles, il n'est plus significatif avec des effets fixes de provenance seulement, alors qu'il reste fort avec des effets fixes de destination.
+
+# Panel spatial {#sec-panel}
+
+## Spécification
+
+La coupe transversale décrit un état ; le panel suit le stock de déplacés hébergés par chaque commune sur les huit *rounds* de couverture nationale, de mai 2024 à juillet 2026 (`r fmt(nrow(pn))` observations). Les *rounds* sont irrégulièrement espacés. La violence est donc mesurée sur l'intervalle qui sépare chaque *round* du précédent, sans chevauchement d'un *round* à l'autre, en décès localisés précisément pour 100 000 habitants et par mois. Le modèle principal est un SLX à effets fixes de commune et de *round*, estimé par les moindres carrés :
+$$
+y_{it} = \beta v_{it} + \theta \sum_j w_{ij} v_{jt} + \mu_i + \tau_t + \varepsilon_{it} ,
+$$
+où $y_{it}$ est le nombre de déplacés hébergés pour 1 000 habitants (arc sinus hyperbolique) et $v_{it} = \ln(1 + m_{it})$ la violence de l'intervalle. Les effets fixes de commune absorbent tout ce qui ne change pas (distance, densité, réseaux, capacité d'accueil) ; les effets fixes de *round*, la tendance nationale. Le coefficient de violence est donc identifié par les seules variations de la violence dans le temps à l'intérieur de chaque commune. Les écarts-types sont regroupés par commune. Trois variantes complètent ce modèle : la violence de l'intervalle précédent, pour un effet différé ; la violence de l'intervalle suivant, qui ne peut pas avoir influencé le stock du *round* et sert de test de pré-tendance ; un modèle de Durbin spatial estimé par maximum de vraisemblance [@elhorst2014; @millo2012].
+
+Le modèle dynamique ajoute le stock retardé $y_{i,t-1}$. Avec huit périodes seulement, l'estimateur à effets fixes d'un tel modèle est biaisé, et l'erreur de mesure du stock, qui fait varier la population corrigée de Port-au-Prince de `r fmt(min(abs(coh$var_pap), na.rm = TRUE), 0)` à `r fmt(max(abs(coh$var_pap), na.rm = TRUE), 0)` % d'un *round* à l'autre (@sec-incertitude), biaise en outre la persistance vers zéro. Le modèle est donc estimé en différences premières par la méthode des moments généralisés [@arellano1991], en instrumentant le stock retardé par ses valeurs plus anciennes ; les retards d'ordre 2, rejetés par le test d'autocorrélation, sont exclus des instruments. L'estimateur à correction de biais de @yu2008, avec la transformation de @lee2010b, conçu pour des panels plus longs, sert de comparaison.
+
+## Résultats
+
+```{r}
+#| label: tbl-panel
+#| tbl-colwidths: [28, 12, 12, 12, 12, 12, 12]
+#| tbl-cap: "Violence et déplacés hébergés par commune, panel de mai 2024 à juillet 2026 (140 communes, 8 rounds, effets fixes de commune et de round)`\\horsliste{`{=latex}. Écarts-types entre parenthèses : regroupés par commune (colonnes 1 à 3), asymptotiques (colonnes 4 et 6), robustes (colonne 5). *** p < 0,01 ; ** p < 0,05 ; * p < 0,1`}`{=latex}"
+
+cs <- function(est, se, p) c(paste0(fmt(est, 3), etoiles(p)), paste0("(", fmt(se, 3), ")"))
+vv <- function(x, v) if (v %in% rownames(x)) cs(x[v, 1], x[v, 2], x[v, 4]) else c("", "")
+ct_fe <- function(m) coeftable(m)
+gm_t <- c_gm; rownames(gm_t) <- sub("lag\\(y, 1\\)", "ylag", rownames(gm_t))
+sd_t <- as.matrix(cdyn[, .(est, se, z = est / se, p)]); rownames(sd_t) <- c("ylag", "wylag", "v", "wv")
+lp <- c(v = "Violence de l'intervalle", wv = "Violence des voisines", v_l1 = "Violence de l'intervalle précédent",
+        v_lead = "Violence de l'intervalle suivant (placebo)", rho = "Dépendance spatiale (ρ)", ylag = "Stock retardé de la commune (φ)")
+c_sdm2 <- c_sdm; rownames(c_sdm2)[1] <- "rho"
+tpn <- do.call(rbind, lapply(names(lp), function(v) data.frame(Variable = c(lp[[v]], ""),
+  `(1) EF` = vv(ct_fe(p_fe), v), `(2) EF + précédent` = vv(ct_fe(p_ret), v), `(3) EF + suivant` = vv(ct_fe(p_av), v),
+  `(4) SDM` = vv(c_sdm2, v), `(5) GMM` = vv(gm_t, v), `(6) SDPD` = vv(sd_t, v), check.names = FALSE)))
+tpn <- rbind(tpn, data.frame(Variable = c("Test d'autocorrélation d'ordre 2 (p)", "Test de Sargan (p)", "Observations"),
+  `(1) EF` = c("", "", fmt(nobs(p_fe))), `(2) EF + précédent` = c("", "", fmt(nobs(p_ret))), `(3) EF + suivant` = c("", "", fmt(nobs(p_av))),
+  `(4) SDM` = c("", "", fmt(nrow(pdat))), `(5) GMM` = c(fmt_p(S$gm_ar2), fmt_p(S$gm_sargan), fmt(length(unlist(gm$residuals)))),
+  `(6) SDPD` = c("", "", fmt(nrow(pdat) - 140)), check.names = FALSE))
+knitr::kable(tpn, row.names = FALSE, align = c("l", rep("r", 6)))
+```
+
+*Lecture* : à commune et *round* donnés, la violence de l'intervalle précédant le *round* n'est pas significativement associée au nombre de déplacés hébergés (`r fmt(coeftable(p_fe)["v", 1], 3)`, `r p_txt(coeftable(p_fe)["v", 4])`, colonne 1). EF : effets fixes de commune et de *round* ; SDM : modèle de Durbin spatial (maximum de vraisemblance) ; GMM : différences premières, instruments $y_{t-3}$ à $y_{t-5}$ [@arellano1991] ; SDPD : panel spatial dynamique corrigé du biais [@yu2008; @lee2010b]. *Champ* : 140 communes, *rounds* 7 à 14. *Sources* : OIM, DTM ; UCDP ; IHSI ; calculs des auteurs.
+
+Le panel (@tbl-panel) ne met pas en évidence d'association robuste entre la violence et le nombre de déplacés hébergés dans une commune :
+
+- **Aucune association significative à l'intérieur des communes.** Avec des fenêtres alignées sur les *rounds*, l'effet de la violence de l'intervalle est faible et non significatif dans toutes les spécifications statiques (`r fmt(coeftable(p_fe)["v", 1], 3)` avec les effets fixes ; `r fmt(c_sdm["v", 1], 3)`, `r p_txt(c_sdm["v", 4])`, dans le modèle de Durbin spatial). Mesurée sur six mois glissants, avec des fenêtres qui se chevauchent d'un *round* à l'autre, et estimée avec des écarts-types asymptotiques, la violence paraît significativement associée au stock. Cet effet ne résiste ni à l'alignement des fenêtres ni au regroupement des écarts-types par commune. Seuls deux coefficients atteignent le seuil de 10 % : l'effet de la violence dans le panel dynamique corrigé du biais (`r fmt(sd_t["v", 1], 3)`, `r p_txt(sd_t["v", 4])`), conçu pour des panels plus longs, et celui de la violence des voisines dans le modèle GMM (`r fmt(gm_t["wv", 1], 3)`, `r p_txt(gm_t["wv", 4])`).
+- **Pas de pré-tendance.** La violence de l'intervalle suivant, postérieure au *round*, n'est pas associée au stock (`r fmt(coeftable(p_av)["v_lead", 1], 3)`, `r p_txt(coeftable(p_av)["v_lead", 4])`), ce qui écarte une anticipation ou une corrélation mécanique.
+- **Les stocks sont persistants et évoluent de concert.** Le stock retardé a un coefficient de `r fmt(gm_t["ylag", 1], 2)` (`r p_txt(gm_t["ylag", 4])`) dans le modèle GMM, et la dépendance spatiale des stocks est forte dans le modèle de Durbin (`r fmt(c_sdm[1, 1], 2)`). Le test de Sargan rejette toutefois les restrictions de suridentification (`r p_txt(S$gm_sargan)`). Les instruments ne sont pas parfaitement valides, et la persistance doit être lue comme un ordre de grandeur.
+
+La coupe et le panel ne se contredisent pas. La coupe compare des communes : celles où la violence a frappé avant les départs sont celles d'où sont partis les déplacés. Le panel compare une même commune d'un *round* à l'autre, sur une période où la géographie de la violence change peu et où le stock de déplacés réagit lentement ; avec huit *rounds* et une mesure de la violence très incomplète (@sec-donnees), il manque de variation pour détecter une association à l'intérieur des communes.
+
+# Robustesse {#sec-robustesse}
+
+## Voisinage, mesure de la violence, communes atypiques
+
+Le @tbl-robustesse ré-estime le modèle principal en faisant varier trois éléments :
+
+- la matrice de pondération (cinq définitions du voisinage) ;
+- la mesure de la violence : toutes localisations, cumul depuis 2022, douze mois avant le *round*, nombre d'événements plutôt que de décès, tueries de civils ou affrontements armés seulement, indicatrice d'au moins un décès ;
+- l'échantillon, sans Gressier ni Mirebalais, ou sans la zone métropolitaine.
+
+```{r}
+#| label: tbl-robustesse
+#| tbl-cap: "Effets de la violence des gangs selon la matrice de pondération, la mesure de la violence et l'échantillon (PPML-SLX)`\\horsliste{`{=latex}. Écarts-types robustes. *** p < 0,01 ; ** p < 0,05 ; * p < 0,1`}`{=latex}"
+
+knitr::kable(rob[, .(Variante = variante, `Départs, direct` = paste0(fmt(dd, 2), etoiles(pdd)), `Départs, total` = paste0(fmt(dt, 2), etoiles(pdt)),
+                     `Arrivées, total` = paste0(fmt(at, 2), etoiles(pat)))], row.names = FALSE, align = c("l", "r", "r", "r"))
+```
+
+*Lecture* : avec la matrice de contiguïté, l'effet total de la violence sur les départs vaut `r fmt(rob[variante == "Contiguïté (reine)", dt], 2)`. Les variantes qui mesurent la violence en événements ou par une indicatrice ne sont pas comparables en niveau aux autres. *Champ* : 140 communes, sauf mention contraire. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+L'effet total de la violence sur les départs est positif et significatif dans `r en_lettres(S$rob_dep)` variantes sur `r nrow(rob)`. La seule exception est `r if (length(S$rob_dep_ns) == 1) tolower(sub("Violence : ", "la violence mesurée par les ", S$rob_dep_ns)) else liste_fr(tolower(S$rob_dep_ns))`. Les départs sont plus étroitement associés aux tueries de civils (`r fmt(rob[variante == "Violence : tueries de civils seulement", dt], 2)`) qu'aux affrontements armés (`r fmt(rob[variante == "Violence : affrontements armés seulement", dt], 2)`, non significatif). Sans la zone métropolitaine, l'association subsiste, et ne tient donc pas à la seule capitale. Sur les arrivées, l'effet total est négatif dans presque toutes les variantes, mais significatif dans `r en_lettres(S$rob_arr_sig)` seulement.
+
+## Erreurs de mesure de la DTM
+
+Les variables expliquées dérivent de la matrice des flux, elle-même incertaine. On ré-estime donc le modèle principal sur `r fmt(B_MS)` des matrices tirées pour le scénario D (@sec-incertitude), en combinant l'incertitude sur les provenances et l'erreur de mesure des effectifs. Les estimations sont combinées par les règles de @rubin1987 : l'estimation retenue est la moyenne des tirages, et sa variance additionne la variance moyenne à l'intérieur des tirages et la variance entre tirages (@tbl-rubin).
+
+```{r}
+#| label: tbl-rubin
+#| tbl-colwidths: [13, 11, 15, 22, 20, 19]
+#| tbl-cap: !expr paste0("Effets de la violence des gangs sous incertitude de la matrice des flux, estimés sur la matrice observée puis sur ", fmt(B_MS), " matrices tirées combinées par les règles de Rubin (PPML-SLX)")
+
+rb <- merge(rubin, rbind(cbind(y = "dep", E_dep), cbind(y = "arr", E_arr)), by = c("y", "effet"), suffixes = c("", "_obs"))
+rb <- rb[order(-(y == "dep"), match(effet, c("direct", "indirect", "total")))]
+knitr::kable(rb[, .(Variable = ifelse(effet == "direct", c(dep = "Départs", arr = "Arrivées")[y], ""), Effet = effet,
+                    `Matrice observée` = paste0(fmt(est_obs, 2), etoiles(p_obs)),
+                    `Tirages combinés (écart-type)` = paste0(fmt(est, 2), etoiles(p), " (", fmt(se, 2), ")"),
+                    `Tirages : intervalle à 90 %` = paste0(fmt(lo, 2), " ; ", fmt(hi, 2)),
+                    `Part de la variance entre tirages` = pc(part_entre, 0))], row.names = FALSE, align = c("l", "l", "r", "r", "r", "r"))
+```
+
+*Lecture* : combiné sur les tirages, l'effet total de la violence sur les départs vaut `r fmt(rubin[y == "dep" & effet == "total", est], 2)` (écart-type de `r fmt(rubin[y == "dep" & effet == "total", se], 2)`), contre `r fmt(ef(E_dep, "total")$est, 2)` sur la matrice observée. *Champ* : 140 communes. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+Les estimations combinées sont proches de celles de la matrice observée, qui se situent à l'intérieur de l'intervalle des tirages`r S$rubin_hors`. La part de la variance due à l'incertitude de la matrice reste faible (`r pc(max(rubin[y == "dep", part_entre]), 0)` au plus pour les départs), ce qui tient à la construction des tirages. Les erreurs indépendantes se compensent à l'agrégation, et la réattribution des parts non majoritaires aux communes proches modifie peu le contraste entre communes violentes et épargnées. Cette faible part indique seulement que l'association estimée est peu sensible aux erreurs de ce type.
+
+
+# Écarts de densité associés à la violence {#sec-densite}
+
+Cette section traduit en populations et en densités les résultats de la @sec-econometrie. Elle ne repose sur aucun modèle supplémentaire. Les départs et les arrivées sont ceux du scénario central, et les effets de la violence ceux du @tbl-coupe. Toutes les densités sont rapportées aux superficies officielles de l'IHSI.
+
+## Variation de la population par commune {#sec-departements}
+
+```{r}
+#| label: carte2d
+#| include: false
+
+# Cartes en deux dimensions : pays entier et zoom sur la zone métropolitaine et ses abords
+zm_cadre <- st_bbox(com_u[com_u$pcode %in% c(cd[zmpp == TRUE, pcode], "HT0115", "HT0116", "HT0142"), ])
+# Carte d'Haïti réduite (A) et agrandissement de la zone métropolitaine (B) dans un même repère : la zone est
+# copiée, agrandie d'un facteur k et placée à droite ; deux traits relient le cadre de A au cadre de B
+carte_2p <- function(cl, pal, titre, src, marques = NULL, part_haiti = 0.44) {
+  zone <- st_as_sfc(zm_cadre)
+  zc <- st_coordinates(st_centroid(zone))[1, ]
+  w <- zm_cadre[["xmax"]] - zm_cadre[["xmin"]]; h <- zm_cadre[["ymax"]] - zm_cadre[["ymin"]]
+  Wh <- bb[["xmax"]] - bb[["xmin"]]
+  gap <- 0.07 * Wh
+  k <- ((1 / part_haiti - 1) * Wh - gap) / w                        # facteur d'agrandissement (environ 5,5)
+  nc <- c(bb[["xmax"]] + gap + k * w / 2, (bb[["ymin"]] + bb[["ymax"]]) / 2)
+  agr <- function(g) (g - zc) * k + nc
+  dd <- cbind(com_u, classe = cl)
+  zz <- suppressWarnings(st_intersection(dd, zone)); st_geometry(zz) <- agr(st_geometry(zz)); st_crs(zz) <- 32618
+  dz <- suppressWarnings(st_intersection(dep_u, zone)); st_geometry(dz) <- agr(st_geometry(dz)); st_crs(dz) <- 32618
+  Z <- c(nc[1] - k * w / 2, nc[1] + k * w / 2, nc[2] - k * h / 2, nc[2] + k * h / 2)    # xmin, xmax, ymin, ymax de B
+  # étiquettes de B : communes de la zone et communes voisines dont la partie visible dépasse 40 km²
+  ec <- suppressWarnings(st_intersection(com_u[, c("pcode", "commune")], zone))
+  ec <- ec[ec$pcode %in% c(cd[zmpp == TRUE, pcode], "HT0115", "HT0116", "HT0142", "HT0141", "HT0121") |
+           as.numeric(st_area(ec)) > 40e6, ]
+  et <- suppressWarnings(st_point_on_surface(ec))
+  st_geometry(et) <- agr(st_geometry(et)); et <- st_drop_geometry(cbind(et, st_coordinates(et)))
+  et$lab <- sub("Croix-Des-Bouquets", "Croix-des-Bouquets", et$commune)
+  v <- villes[!commune %in% "Port-au-Prince"]
+  e0 <- c(Z[2] - 10e3 * k - 0.09 * k * w, Z[3] - 0.07 * k * h); eh <- 0.012 * k * h     # barre d'échelle de B (10 km)
+  titre_p <- function(x, y, lab) annotate("text", x = x, y = y, label = lab, hjust = 0, vjust = 0, size = 3, fontface = "bold",
+                                         colour = INK, family = POLICE)
+  pz <- ggplot() +
+    geom_sf(data = dd, aes(fill = classe), colour = "white", linewidth = 0.1) +
+    geom_sf(data = dep_u, fill = NA, colour = "#6f6e69", linewidth = 0.25) +
+    geom_sf(data = zz, aes(fill = classe), colour = "white", linewidth = 0.35) +
+    geom_sf(data = dz, fill = NA, colour = "#4a4945", linewidth = 0.55) +
+    annotate("rect", xmin = zm_cadre[["xmin"]], xmax = zm_cadre[["xmax"]], ymin = zm_cadre[["ymin"]], ymax = zm_cadre[["ymax"]],
+             fill = NA, colour = INK, linewidth = 0.4) +
+    annotate("segment", x = zm_cadre[["xmax"]], xend = Z[1], y = c(zm_cadre[["ymax"]], zm_cadre[["ymin"]]), yend = c(Z[4], Z[3]),
+             colour = "#8a8984", linewidth = 0.3) +
+    annotate("rect", xmin = Z[1], xmax = Z[2], ymin = Z[3], ymax = Z[4], fill = NA, colour = INK, linewidth = 0.5) +
+    geom_point(data = v, aes(x, y), shape = 21, size = 0.9, fill = INK, colour = "white", stroke = 0.3) +
+    geom_text_repel(data = v, aes(x, y, label = commune), family = POLICE, size = 2.1, colour = INK, bg.colour = "white", bg.r = 0.12,
+                    box.padding = 0.12, point.padding = 0.1, min.segment.length = Inf, seed = 3) +
+    geom_text_repel(data = et, aes(X, Y, label = lab), family = POLICE, size = 2.6, colour = INK, bg.colour = "white", bg.r = 0.14,
+                    box.padding = 0.15, min.segment.length = Inf, seed = 4, xlim = Z[1:2] + c(0.01, -0.01) * k * w,
+                    ylim = Z[3:4] + c(0.02, -0.02) * k * h) +
+    echelle(km = 50, fx = 0.40, fy = -0.06) +
+    annotate("rect", xmin = e0[1], xmax = e0[1] + 10e3 * k, ymin = e0[2], ymax = e0[2] + eh, fill = INK2, colour = INK2, linewidth = 0.2) +
+    annotate("text", x = c(e0[1], e0[1] + 10e3 * k), y = e0[2] + 1.8 * eh, label = c("0", "10 km"), size = 2.4, colour = INK2,
+             vjust = 0, family = POLICE) +
+    titre_p(bb[["xmin"]], Z[4] + 0.03 * k * h, "A. Haïti") +
+    titre_p(Z[1], Z[4] + 0.03 * k * h, "B. Zone métropolitaine et ses abords (agrandie)") +
+    scale_fill_manual(values = setNames(pal, levels(cl)), drop = FALSE, name = titre) +
+    coord_sf(crs = 32618, datum = NA, expand = FALSE,
+             xlim = c(bb[["xmin"]] - 2e3, Z[2] + 2e3), ylim = c(min(bb[["ymin"]], Z[3]) - 0.1 * k * h, Z[4] + 0.1 * k * h)) +
+    labs(caption = src) + theme_carte +
+    theme(legend.position = "bottom", legend.justification = "left", legend.direction = "horizontal", legend.title.position = "top",
+          legend.key.size = unit(8, "pt"), legend.text = element_text(size = 7, colour = INK2, family = POLICE),
+          legend.title = element_text(size = 7.5, face = "bold", colour = INK, family = POLICE))
+  if (!is.null(marques)) {                                          # croix : communes censurées, sur A et sur B
+    mq <- st_point_on_surface(com_u[com_u$pcode %in% marques, ])
+    mz <- mq[lengths(st_intersects(mq, zone)) > 0, ]
+    pz <- pz + geom_point(data = st_drop_geometry(cbind(mq, st_coordinates(mq))), aes(X, Y), shape = 4, size = 1.2, stroke = 0.6, colour = INK)
+    if (nrow(mz)) { st_geometry(mz) <- agr(st_geometry(mz))
+      pz <- pz + geom_point(data = st_drop_geometry(cbind(mz, st_coordinates(mz))), aes(X, Y), shape = 4, size = 2.4, stroke = 0.9, colour = INK) }
+  }
+  pz
+}
+DIV8 <- c("#8e1b1e", "#b4282a", "#e34948", "#f4a9a7", "#f0efec", "#9ec5f4", "#3987e5", "#184f95")
+cl_var <- cut(cd$var_B, c(-Inf, -50, -25, -10, -2, 2, 10, 25, Inf),
+              labels = c("moins de −50 %", "−50 à −25 %", "−25 à −10 %", "−10 à −2 %", "−2 à +2 %", "+2 à +10 %", "+10 à +25 %", "plus de +25 %"))
+dep_txt <- function(d, seuil_p = -20, seuil_g = 5) {
+  lst <- function(z) liste_fr(paste0(z$commune, " (", sgn(z$var_B), ")"))
+  list(pertes = lst(cd[departement == d & var_B < seuil_p][order(var_B)]), np = cd[departement == d & var_B < seuil_p, .N],
+       gains = lst(cd[departement == d & var_B > seuil_g & !zmpp][order(-var_B)])) }
+DO <- dep_txt("Ouest"); DA <- dep_txt("Artibonite")
+prov <- function(pc) { z <- f_ref[destination == pc & origine != destination][order(-pdi)]
+  list(nom = cd$commune[match(z$origine[1], cd$pcode)], part = z$pdi[1] / sum(z$pdi)) }
+P_ver <- prov("HT0532"); P_leo <- prov("HT0121")
+dl <- cd[pcode == "HT0112"]; pv <- cd[pcode == "HT0114"]
+cb_dl <- f_ref[origine == "HT0131" & destination == "HT0112", sum(pdi)]
+```
+
+La @fig-variation représente la variation de la population de chaque commune due aux déplacements, par rapport à sa population de base, dans le scénario central. Les deux départements où la violence des gangs est la plus forte sont aussi ceux où la carte du peuplement change le plus.
+
+```{r}
+#| label: fig-variation
+#| fig-cap: "Variation de la population des communes due aux déplacements, juillet 2026, par rapport à la population de base (scénario central)`\\horsliste{`{=latex}. La carte B agrandit le cadre tracé sur la carte A`}`{=latex}"
+#| fig-height: 4.0
+
+carte_2p(cl_var, DIV8, "Variation de la population", SRC_DTM)
+```
+
+- **Dans l'Ouest, la population quitte l'agglomération pour le littoral.** Les pertes les plus fortes touchent `r DO$pertes`. Les gains vont aux communes de la côte, à l'ouest de la capitale et sur l'île de la Gonâve : `r DO$gains`. Léogâne, la plus grande commune d'accueil du département, `r if (P_leo$part > 0.99) paste0("reçoit tous ses déplacés de ", P_leo$nom) else paste0("reçoit d'abord des déplacés de ", P_leo$nom, " (", pc(P_leo$part, 0), " de ses arrivées)")``r if (P_leo$nom == "Gressier") ", lieu de transit sur la route du Sud. Une partie d'entre eux venaient sans doute du sud-ouest de la capitale (@sec-gressier)" else ""`.
+- **Dans l'Artibonite, le bas de la vallée se vide au profit de ses abords.** `r DA$pertes` `r if (DA$np > 1) "perdent une grande partie de leur population" else "perd une grande partie de sa population"`. Verrettes en est la première bénéficiaire (`r sgn(cd[pcode == "HT0532"]$var_B)` de variation nette, pour des arrivées égales à `r fmt(100 * cd[pcode == "HT0532"]$arrivee / cd[pcode == "HT0532"]$pop0, 1)` % de sa population de base), et `r pc(P_ver$part, 0)` de ses arrivées viennent de `r P_ver$nom`.
+- **`r if (pv$var_B > 0.5 && dl$var_B < -0.5) "Pétion-Ville gagne des habitants, Delmas en perd." else "Delmas et Pétion-Ville."`** Pétion-Ville reçoit davantage de déplacés qu'elle n'en perd : `r fmt(pv$arrivee)` arrivées contre `r fmt(pv$depart)` départs vers d'autres communes (`r sgn(pv$var_B)`). Delmas, au contraire, perd des habitants : `r fmt(dl$depart)` personnes en sont parties, contre `r fmt(dl$arrivee)` arrivées, dont `r fmt(cb_dl)` venues de Croix-des-Bouquets (`r sgn(dl$var_B)`). Elle héberge en outre `r fmt(dl$intra)` déplacés venus de ses propres quartiers, que les données ne permettent pas de localiser plus finement. Comme Tabarre, aucune des deux ne reçoit de part des départs excédentaires déclarés depuis Gressier et Mirebalais (@sec-correction).
+
+## Écarts associés à la violence
+
+On compare la population corrigée de chaque commune à celle qu'elle aurait si ses départs et ses arrivées étaient ce que le modèle de la @sec-econometrie prédit pour une commune **sans violence**, à densité et à distance égales, en retirant seulement l'effet direct estimé de sa propre violence. Concrètement, les départs observés sont multipliés par $\exp(-\hat\beta_1 v_i)$ et les arrivées par $\exp(-\hat\gamma_1 v_i)$, où $\hat\beta_1$ et $\hat\gamma_1$ sont les effets directs du @tbl-coupe. La part des départs et des arrivées que le modèle n'explique pas, le résidu, est conservée. L'écart entre la population corrigée et cette population prédite est **associé** à la violence par le modèle ; il ne mesure pas une perte de population. Trois précautions s'imposent :
+
+- **Les communes épargnées ont elles-mêmes changé.** Elles ont reçu des déplacés. L'écart compare des communes touchées et épargnées, il ne décrit pas ce que serait la carte du peuplement sans la crise, et il ne s'additionne pas d'une commune à l'autre.
+- **Gressier et Mirebalais sont censurées.** Leurs départs étant plafonnés à 75 % de leur population (@sec-correction), leur écart est fixé par le plafond choisi par les auteurs ; elles sont marquées d'une croix sur la @fig-ecarts.
+- **L'écart dépend de la forme retenue pour la violence.** Le modèle associe aux départs surtout la présence d'une violence meurtrière (@sec-econometrie) ; le @tbl-ecarts donne donc aussi l'écart obtenu avec une indicatrice d'au moins un décès et avec des classes de mortalité.
+
+```{r}
+#| label: fig-ecarts
+#| fig-cap: "Écart entre la population corrigée de juillet 2026 et la population prédite sans l'effet direct estimé de la violence locale, par commune (modèle de Poisson SLX)`\\horsliste{`{=latex}. Croix : communes dont les départs sont plafonnés (écart censuré). La carte B agrandit le cadre tracé sur la carte A`}`{=latex}"
+#| fig-height: 4.0
+
+cl_e <- cut(cd$ecart, c(-Inf, -50, -25, -10, -0.5, Inf),
+            labels = c("plus de −50 %", "−50 à −25 %", "−25 à −10 %", "−10 à 0 %", "aucun écart"))
+cl_e <- factor(cl_e, rev(levels(cl_e)))
+carte_2p(cl_e, c("#f0efec", "#f4c5bd", "#e8846f", "#c2342b", "#6a0911"), "Écart associé à la violence", SRC_MOD, marques = CENSURE)
+```
+
+```{r}
+#| label: tbl-ecarts
+#| tbl-colwidths: [20, 10, 11, 12, 10, 13, 12, 12]
+#| tbl-cap: !expr paste0("Écarts de population associés à la violence des gangs dans les communes où ils sont les plus forts", if ("HT0111" %in% top_e$pcode) "" else " et à Port-au-Prince", " (juillet 2026)`\\horsliste{`{=latex}. Population prédite sans l'effet direct estimé de la violence locale ; intervalle à 90 % sur 2 000 tirages des coefficients`}`{=latex}")
+
+sel_e <- cd[pcode %in% unique(c(top_e$pcode, "HT0111"))][order(ecart)]
+knitr::kable(sel_e[, .(Commune = paste0(sub("Petite Rivière de l'Artibonite", "Petite-Rivière", commune), ifelse(pcode %in% CENSURE, " *", "")),
+                       Violence = fmt(viol, 1), Corrigée = fmt(pop_B / 1e3, 1), `Prédite sans violence` = fmt(pop_cf / 1e3, 1),
+                       Écart = sgn(ecart), `Intervalle à 90 %` = paste0(fmt(ecart_lo, 0), " ; ", fmt(ecart_hi, 0)),
+                       Indicatrice = sgn(ecart_ind), Classes = sgn(ecart_cl))],
+             row.names = FALSE, align = c("l", rep("r", 7)))
+```
+
+*Lecture* : violence en décès pour 100 000 habitants ; populations en milliers d'habitants ; « Indicatrice » et « Classes » : écart obtenu avec ces formes de la violence ; astérisque : écart censuré par le plafond des départs. À Port-au-Prince, la population corrigée (`r fmt(S$pap_e$pop_B, -3)` habitants) est inférieure de `r fmt(-S$pap_e$ecart, 0)` % à la population que le modèle prédit pour la commune sans l'effet direct de sa violence (`r fmt(S$pap_e$pop_cf, -3)`). *Champ* : les dix communes où l'écart est le plus fort, `r if ("HT0111" %in% top_e$pcode) "dont" else "et"` Port-au-Prince. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+```{r}
+#| label: fig-decomposition
+#| fig-cap: "Variation de la population due aux déplacements, décomposée en une part associée à la violence locale par le modèle et un reste (communes du tableau précédent, juillet 2026)`\\horsliste{`{=latex}. Astérisque : écart censuré par le plafond des départs`}`{=latex}"
+#| fig-height: 3.6
+
+dcp <- sel_e[, .(commune = paste0(sub("Petite Rivière de l'Artibonite", "Petite-Rivière de l'Artibonite", sub("Croix-Des-Bouquets", "Croix-des-Bouquets", commune)),
+                                  ifelse(pcode %in% CENSURE, " *", "")), total = pop_B - pop0, part_v, autre)]
+dcp[, commune := factor(commune, commune[order(-total)])]
+dl_ <- melt(dcp, id.vars = c("commune", "total"), measure.vars = c("part_v", "autre"), variable.name = "comp", value.name = "v")
+dl_[, comp := factor(comp, c("part_v", "autre"), c("Associée à la violence locale (modèle)", "Reste (non expliqué par la violence locale)"))]
+ggplot(dl_, aes(v / 1e3, commune, fill = comp)) +
+  geom_col(width = 0.65, position = position_stack(reverse = TRUE)) +
+  geom_point(data = dcp, aes(total / 1e3, commune), inherit.aes = FALSE, shape = 23, size = 2, fill = "white", colour = INK, stroke = 0.6) +
+  geom_vline(xintercept = 0, colour = AXE, linewidth = 0.4) +
+  scale_fill_manual(values = c(ROUGE, "#9ec5f4"), name = NULL) +
+  scale_x_continuous(labels = function(x) fmt(x)) +
+  labs(x = "Variation de la population (milliers d'habitants ; losange : variation totale)", y = NULL, caption = SRC_MOD) +
+  theme(panel.grid.major.x = element_line(colour = GRILLE, linewidth = 0.3), axis.text.y = element_text(colour = INK, size = 7.5))
+```
+
+Les résultats (@tbl-ecarts et @fig-decomposition) se lisent ainsi :
+
+- **Dans les communes touchées qui ont des départs attribués, le modèle associe à la violence la plus grande part de la perte.** À Port-au-Prince, la population corrigée est inférieure d'environ `r fmt(-S$pap_e$ecart, 0)` % à la population prédite sans violence (intervalle à 90 % : `r fmt(-S$pap_e$ecart_hi, 0)` à `r fmt(-S$pap_e$ecart_lo, 0)` %) ; `r liste_fr(head(setdiff(S$top_e, c("Gressier", "Mirebalais", "Port-au-Prince")), 4))` présentent des écarts du même ordre ou plus forts. Cette forte part tient en partie à la construction des données, car les communes sans violence n'ont presque jamais de départ attribué, si bien que le modèle prédit très peu de départs en l'absence de violence.
+- **Les écarts de Gressier et de Mirebalais sont fixés par le plafond** (`r fmt(cd[pcode == "HT0116", ecart], 0)` % et `r fmt(cd[pcode == "HT0621", ecart], 0)` %) et ne doivent pas être interprétés.
+- **`r S$cabaret$commune`, où une attaque des gangs a fait au moins 40 morts en septembre 2025 [@onu2025cabaret], ne présente aucun écart** : aucun départ ne lui est attribué par la DTM, et sa population corrigée `r if (round(S$cabaret$var_B) == 0) "ne varie pas" else paste("varie de", sgn(S$cabaret$var_B))`.
+- **Les écarts liés aux arrivées sont fragiles.** Pour une commune d'accueil touchée par la violence, comme Léogâne, l'écart vient de l'effet de la violence sur les arrivées. Il atteint `r fmt(cd[pcode == "HT0121", ecart], 0)` % avec la mesure principale, mais `r if (round(cd[pcode == "HT0121", ecart_ind]) == 0) "devient nul" else paste0("n'est plus que de ", fmt(cd[pcode == "HT0121", ecart_ind], 0), " %")` avec l'indicatrice. Pour les communes de départ, les trois formes donnent des écarts proches.
+
+L'enseignement principal tient à la géographie. Celle des pertes de population coïncide largement avec celle de la violence meurtrière qui a précédé les départs, et un modèle qui ne connaît que la violence, la densité et la distance reproduit l'essentiel de ces pertes. Il n'en découle pas que la violence les a toutes causées.
+
+# Discussion et limites {#sec-limites}
+
+## Les données
+
+La DTM repose sur des informateurs clés, et son cadre méthodologique la juge mieux adaptée aux populations relativement stables qu'aux personnes en transit [@oim2022cadre]. Ses chiffres sont des ordres de grandeur, cohérents d'un *round* à l'autre dans leurs totaux, mais variables dans leur répartition entre communes. La population corrigée de Port-au-Prince varie de `r fmt(min(abs(coh$var_pap), na.rm = TRUE), 0)` à `r fmt(max(abs(coh$var_pap), na.rm = TRUE), 0)` % d'un *round* à l'autre. La provenance n'est connue que pour la majorité des déplacés de chaque localité, et elle désigne le dernier lieu quitté. Gressier et Mirebalais en montrent les effets, et leur traitement fait varier la perte de la zone métropolitaine de près du simple au double (@sec-zmpp). Enfin, l'accès des équipes de la DTM aux quartiers contrôlés par les gangs est limité, si bien que les déplacés qui y restent, comme les habitants qui n'ont pas fui, y sont probablement mal comptés.
+
+La population de base est l'autre source d'incertitude. Le dernier recensement date de 2003. La structure communale de l'IHSI pour 2015 est une projection de ce recensement, et la population de base suppose que chaque commune a crû au rythme national entre 2015 et 2024 ; pour la zone métropolitaine, cette seule hypothèse représente `r fmt(DEC[["base"]] - DEC[["ihsi15"]], -3)` habitants. Une erreur sur la population de base se transmet directement aux populations corrigées. L'enveloppe de la @sec-incertitude n'en tient pas compte et sous-estime donc l'incertitude totale.
+
+La correction elle-même laisse de côté plusieurs flux. Elle ne retranche que les départs vers d'autres communes et n'ajoute que les arrivées recensées par la DTM. Elle ignore :
+
+- l'émigration internationale, qui s'est accélérée avec la crise ; la perte réelle de la zone métropolitaine pourrait être plus forte que celle que l'article estime ;
+- les rapatriements forcés depuis la République dominicaine, qui ont ramené plus de 265 000 personnes en 2025 [@oim2026c], sans être comptées comme déplacées ;
+- la mortalité et la natalité depuis 2024, dont la mortalité violente, de l'ordre de 5 000 à 6 000 personnes tuées par an selon les Nations unies (@tbl-couverture), faible au regard des déplacements ;
+- les retournés : les `r fmt(S$retournes)` retournés recensés en juillet 2026 ne sont plus comptés comme déplacés. Ils sont implicitement replacés dans leur commune, ce qui est correct s'ils ne sont pas aussi comptés ailleurs.
+
+La violence, enfin, n'est mesurée qu'en partie. L'UCDP ne retient que les événements ayant fait au moins un mort et attribuables à un groupe armé organisé ; il couvre `r pc(couv[an == 2023, part], 0)` à `r pc(couv[an == 2025, part], 0)` des décès recensés par les Nations unies selon l'année (@tbl-couverture). Les enlèvements, les incendies de maisons, les menaces et le racket, qui font aussi fuir, n'y figurent pas. La mesure ne retient donc que la part meurtrière de la pression qu'exercent les gangs. La mesure principale écarte les décès localisés seulement à l'échelle de l'arrondissement ou du département, qui créaient des artefacts (une violence uniforme dans tout le Sud-Est), au prix d'une couverture un peu plus faible. Les données de 2026 sont provisoires.
+
+## L'interprétation
+
+Les effets estimés sont des associations conditionnelles, car la violence et les départs s'alimentent mutuellement. Un quartier vidé est plus facile à contrôler pour un groupe armé, et la violence se déplace avec les territoires disputés. La règle de la provenance majoritaire donne des départs à un petit nombre de communes, presque toutes violentes, ce qui renforce mécaniquement l'association en coupe. Le panel, qui compare une même commune dans le temps et neutralise ses caractéristiques permanentes, ne détecte pas d'association robuste ; il manque toutefois de variation. Dans le modèle gravitaire, le petit nombre de communes de provenance rend fragiles l'effet de la distance et celui de la capitale.
+
+Aucune source indépendante ne permet aujourd'hui de valider les populations corrigées commune par commune. Les données anonymisées des opérateurs de téléphonie mobile, déjà mobilisées en Haïti après le séisme de 2010 et ailleurs pour suivre les mouvements de population presque en temps réel [@bengtsson2011; @lu2012; @deville2014; @wilson2016], pourraient combler ce manque ; elles fourniraient aussi les flux observés à intervalles réguliers qu'exigerait un véritable modèle d'interaction spatiale dynamique [@lesage2008].
+
+Les populations corrigées sont plus proches de la population présente que les grilles et les estimations officielles, mais elles ne sont pas des dénombrements. Trois règles d'usage en découlent. Utiliser l'enveloppe plutôt que la seule valeur centrale lorsque la décision dépend de l'ordre de grandeur, en particulier pour la zone métropolitaine, Carrefour, Port-au-Prince et Croix-des-Bouquets, dont les populations varient le plus selon les hypothèses (annexe C). Mettre à jour les corrections à chaque *round* de la DTM, puisque la répartition des déplacés change d'un *round* à l'autre. Réserver les populations par section communale (scénario E) aux ordres de grandeur, car la provenance des déplacés n'est connue qu'à l'échelle de la commune.
+
+## Ne pas nuire {#sec-nuire}
+
+Les cartes de déplacés et de violence peuvent exposer des personnes vulnérables ou renseigner des groupes armés. L'article ne publie que des agrégats par commune et par section communale, jamais la localisation des sites de déplacés ni celle des événements violents, et suit les principes de responsabilité des données dans l'action humanitaire [@iasc2021] que rappelle le cadre de la DTM [@oim2022cadre].
+
+# Conclusion {#sec-conclusion}
+
+Les cartes de population disponibles pour Haïti ne prennent pas en compte les déplacements liés à la crise sécuritaire. WorldPop reprend la répartition communale des estimations officielles de 2015, et les estimations de l'IHSI pour 2024 n'ajustent la population qu'entre départements, alors que plus d'un million de personnes ont changé de commune. Pour tout usage qui suppose de connaître la population présente aujourd'hui (besoins humanitaires, taux de couverture, exposition aux risques), ces estimations surestiment la capitale et sous-estiment les villes d'accueil.
+
+Corriger ces estimations avec les données de l'OIM modifie sensiblement le tableau. Selon le traitement des provenances déclarées incohérentes, la zone métropolitaine de Port-au-Prince compterait entre `r fmt(ENV$zm[1] / 1e6, 2)` et `r fmt(ENV$zm[2] / 1e6, 2)` millions d'habitants en juillet 2026, `r fmt(I$B[["zmpp"]] / 1e6, 2)` millions dans le scénario central, soit environ `r pc(S$perte_zmpp / I$REF[["zmpp"]], 0)` de moins que sa population d'avant les déplacements. Le sens de l'écart est certain, son ampleur dépend surtout de Gressier et de Mirebalais. La densité suit le même mouvement. Dans le scénario central, celle de Port-au-Prince passe de `r fmt(I$REF[["dens_pap"]], -2)` à `r fmt(I$B[["dens_pap"]], -2)` habitants par kilomètre carré, et la part de la population qui vit dans des carrés de 1 km² de plus de 10 000 habitants recule de `r fmt(100 * I$REF[["part_10k"]], 1)` à `r pc(I$B[["part_10k"]])` (@tbl-scenarios). Le peuplement devient un peu moins concentré, au profit des villes moyennes de province.
+
+L'économétrie spatiale décrit la logique de cette redistribution sans en établir les causes. Les départs sont plus nombreux dans les communes où la violence meurtrière des gangs a frappé dans les mois qui ont précédé, une association qui résiste aux variantes et à un test placebo ; les tueries de civils y sont plus étroitement liées que les affrontements armés. Le panel, qui suit chaque commune d'un *round* à l'autre, ne met pas en évidence d'association robuste. Les déplacés qui changent de commune privilégient les destinations proches, où `r if (S$part_25 > 0.25 && S$part_25 < 1/3) "plus d'un quart" else pc(S$part_25, 0)` d'entre eux s'installent à moins de 25 km, et, au-delà, `r if (VIOL_SUR) "les villes les plus peuplées et les moins violentes" else "les villes les plus peuplées"`.
+
+Les populations corrigées, publiées avec leurs fourchettes, sont le produit le plus directement utile de ce travail. Elles restent fragiles, car la DTM repose sur des informateurs clés, la population de base sur un recensement de 2003, et aucune source indépendante ne permet encore de les valider commune par commune. Mettre à jour les cartes de population au rythme des *rounds* de la DTM, en confrontant ces corrections à des sources indépendantes, serait une première réponse, peu coûteuse, au décalage entre les cartes et la population réelle. Les données anonymisées de téléphonie mobile, déjà utilisées en Haïti après le séisme de 2010 [@bengtsson2011], pourraient fournir ces sources.
+
+# Références {.unnumbered}
+
+::: {#refs}
+:::
+
+
+```{=latex}
+\appendix
+\counterwithin{table}{section}
+\counterwithin{figure}{section}
+```
+
+# Spécifications spatiales : diagnostics, effets et tests {#sec-annexe-specifications .appendix}
+
+Cette annexe estime, sur les taux de départ (scénario central) et d'arrivée pour 1 000 habitants transformés par l'arc sinus hyperbolique, les huit spécifications linéaires de la famille spatiale, avec la mesure principale de la violence et la matrice principale.
+
+```{r}
+#| label: tbl-diagnostics
+#| tbl-cap: "Diagnostics de dépendance spatiale résiduelle (140 communes, six plus proches voisins)`\\horsliste{`{=latex}. Valeurs p`}`{=latex}"
+
+knitr::kable(data.frame(
+  Test = c("Moran sur les résidus des MCO", "Multiplicateur de Lagrange, erreur", "Multiplicateur de Lagrange, retard",
+           "Multiplicateur robuste, erreur", "Multiplicateur robuste, retard", "Moran sur les résidus de Pearson du modèle de Poisson SLX"),
+  Départs = c(fmt_p(diag_lm$dep), fmt_p(S$moran_dep)), Arrivées = c(fmt_p(diag_lm$arr), fmt_p(S$moran_arr)), check.names = FALSE),
+  row.names = FALSE, align = c("l", "r", "r"))
+```
+
+*Lecture* : pour les départs, l'indice de Moran des résidus des MCO n'est pas significatif (`r p_txt(diag_lm$dep[["moran"]])`). *Champ* : 140 communes. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+Les diagnostics diffèrent selon l'équation (@tbl-diagnostics). Pour les départs, les résidus des MCO ne présentent pas d'autocorrélation significative, et les tests de multiplicateur de Lagrange [@anselin1996] ne rejettent pas, au seuil de 5 %, l'absence de dépendance, qu'elle porte sur les erreurs ou sur la variable expliquée ; seules leurs versions robustes signalent une dépendance. Pour les arrivées, la dépendance spatiale résiduelle est nette dans tous les tests, et elle subsiste dans le modèle de Poisson SLX. Les écarts-types robustes du modèle principal n'en tiennent pas compte, et ceux de Conley, qui devraient le faire, ne sont pas fiables ici (@sec-econometrie). Les p-valeurs des arrivées sont donc à lire avec prudence.
+
+```{r}
+#| label: tbl-comparaison
+#| tbl-cap: "Effets direct et total de la violence des gangs selon la spécification linéaire (140 communes, six plus proches voisins)`\\horsliste{`{=latex}. Entre parenthèses, les interactions spatiales retenues. Pour les MCO et le SEM, les effets se confondent avec le coefficient. *** p < 0,01 ; ** p < 0,05 ; * p < 0,1 (p simulées pour les autres modèles, 2 000 tirages)`}`{=latex}"
+
+noms_m <- c(MCO = "MCO", SLX = "SLX (WX)", SAR = "SAR (Wy)", SEM = "SEM (Wu)", SAC = "SAC (Wy, Wu)",
+            SDM = "SDM (Wy, WX)", SDEM = "SDEM (WX, Wu)", GNS = "GNS (Wy, WX, Wu)")
+tc <- data.frame(Modèle = unname(noms_m[cmp$dep$modele]))
+for (o in names(cmp)) {
+  tc[[paste0(o, "_d")]] <- paste0(fmt(cmp[[o]]$dir, 2), etoiles(cmp[[o]]$pdir))
+  tc[[paste0(o, "_t")]] <- paste0(fmt(cmp[[o]]$est, 2), etoiles(cmp[[o]]$p))
+}
+names(tc) <- c("Modèle", "Départs, direct", "Départs, total", "Arrivées, direct", "Arrivées, total")
+knitr::kable(tc, row.names = FALSE, align = c("l", rep("r", 4)))
+```
+
+*Lecture* : dans le SDM, l'effet direct de la violence sur le taux de départ (arc sinus hyperbolique) vaut `r fmt(cmp$dep[modele == "SDM", dir], 2)`. Les effets des équations des départs et des arrivées, estimées séparément sur des variables transformées, ne s'additionnent pas. *Champ* : 140 communes. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+```{r}
+#| label: tbl-parametres
+#| tbl-cap: "Paramètres spatiaux (ρ ; λ) et critère d'information d'Akaike des huit spécifications linéaires (140 communes, six plus proches voisins)`\\horsliste{`{=latex}. *** p < 0,01 ; ** p < 0,05 ; * p < 0,1 (test de Wald)`}`{=latex}"
+
+cel_rl <- function(z) paste0(ifelse(is.na(z$rho), "—", paste0(fmt(z$rho, 2), etoiles(z$p_rho))), " ; ",
+                            ifelse(is.na(z$lambda), "—", paste0(fmt(z$lambda, 2), etoiles(z$p_lambda))))
+knitr::kable(data.frame(Modèle = unname(noms_m[cmp$dep$modele]),
+  `Départs : ρ ; λ` = cel_rl(cmp$dep), `AIC (rang)` = paste0(fmt(cmp$dep$aic, 1), " (", rang_aic$dep, ")"),
+  `Arrivées : ρ ; λ` = cel_rl(cmp$arr), `AIC (rang) ` = paste0(fmt(cmp$arr$aic, 1), " (", rang_aic$arr, ")"), check.names = FALSE),
+  row.names = FALSE, align = c("l", rep("r", 4)))
+```
+
+*Lecture* : pour les départs, le `r cmp$dep[which.min(aic), modele]` a le plus faible critère d'Akaike (`r fmt(min(cmp$dep$aic), 1)`). *Champ* : 140 communes. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+```{r}
+#| label: tbl-emboitement
+#| tbl-cap: "Tests du rapport de vraisemblance entre spécifications emboîtées : le modèle général contre le modèle restreint`\\horsliste{`{=latex}. Valeurs p ; une valeur faible rejette la restriction`}`{=latex}"
+
+noms_t <- c("GNS-SDM" = "GNS contre SDM", "GNS-SDEM" = "GNS contre SDEM", "GNS-SAC" = "GNS contre SAC",
+            "SDM-SAR" = "SDM contre SAR", "SDM-SEM" = "SDM contre SEM (facteur commun)", "SDM-SLX" = "SDM contre SLX",
+            "SDEM-SEM" = "SDEM contre SEM", "SDEM-SLX" = "SDEM contre SLX", "SAC-SAR" = "SAC contre SAR", "SAC-SEM" = "SAC contre SEM")
+knitr::kable(data.frame(Test = unname(noms_t[rownames(lr)]), Départs = fmt_p(lr[, "dep"]), Arrivées = fmt_p(lr[, "arr"]), check.names = FALSE),
+             row.names = FALSE, align = c("l", "r", "r"))
+```
+
+*Lecture* : pour les arrivées, le test du SDM contre le SLX donne `r p_txt(lr["SDM-SLX", "arr"])` : la restriction du SLX est rejetée. *Champ* : 140 communes. *Sources* : OIM, DTM (*round* 14) ; UCDP ; IHSI ; calculs des auteurs.
+
+Les tests du rapport de vraisemblance (@tbl-emboitement) comparent chaque modèle aux spécifications qu'il englobe. Contre le SDM, `r phr_lr("SDM-SLX", "le SLX")`, `r phr_lr("SDM-SAR", "le SAR")` et `r phr_lr("SDM-SEM", "le SEM (restriction du facteur commun)")`. Contre le SDEM, `r phr_lr("SDEM-SLX", "le SLX")` et `r phr_lr("SDEM-SEM", "le SEM")`. Contre le SAC, `r phr_lr("SAC-SAR", "le SAR")` et `r phr_lr("SAC-SEM", "le SEM")`. Contre le GNS enfin, `r phr_lr("GNS-SDM", "le SDM")`, `r phr_lr("GNS-SDEM", "le SDEM")` et `r phr_lr("GNS-SAC", "le SAC")`. Les rejets prononcés par le GNS sont à prendre avec prudence : ses deux paramètres spatiaux ne sont pas identifiés séparément (@sec-comparaison). Pour les départs, le SDEM, qui associe l'influence des caractéristiques des voisines et des chocs communs, n'est pas rejeté contre le GNS et a le plus faible critère d'Akaike ; c'est la spécification linéaire la plus proche du modèle de comptage SLX retenu.
+
+# Sensibilité de la correction au plafond et à la réattribution {#sec-annexe-sensibilite .appendix}
+
+```{r}
+#| label: tbl-sensibilite
+#| tbl-colwidths: [30, 14, 15, 12, 14, 15]
+#| tbl-cap: "Sensibilité de la population corrigée au plafond des départs et à la règle de réattribution de l'excédent (juillet 2026)`\\horsliste{`{=latex}. Plafond de 75 % sauf indication contraire`}`{=latex}"
+
+combos <- list(c(0.75, "axes"), c(0.5, "axes"), c(1, "axes"), c(0.75, "axes_pap"), c(0.75, "axes_cdb"),
+               c(0.75, "zmpp_dep"), c(0.75, "zmpp"), c(0.75, "departs"), c(0.75, "aucune"))
+lib_rl <- c(axes = "axes routiers", axes_pap = "axes, PaP entier", axes_cdb = "axes, Mirebalais → CdB",
+            zmpp_dep = "zone métrop., départs", zmpp = "zone métrop., population",
+            departs = "toutes provenances", aucune = "surcomptage")
+sens <- rbindlist(lapply(combos, function(cr) {
+  cap <- as.numeric(cr[1]); rl <- cr[2]; x <- corriger(s_ref, cap, rl); g_ <- grille_c(x)
+  vr <- function(p) sgn(100 * (x[pcode == p, pop_c / pop0] - 1))
+  data.table(zm = sum(x$pop_c[x$zmpp]),
+             Réattribution = paste0(lib_rl[[rl]], if (rl == "axes" && cap == 0.75) " (central)" else if (cap != 0.75) paste0(", plafond ", fmt(100 * cap), "\u00a0%") else ""),
+             `Zone métrop. (hab.)` = fmt(sum(x$pop_c[x$zmpp])),
+             `Port-au-Prince (hab./km²)` = fmt(x[pcode == "HT0111", pop_c / km2], -2),
+             Carrefour = vr("HT0113"), `Croix-des-Bouquets` = vr("HT0131"),
+             `km² le plus dense (hab./km²)` = fmt(max(g_), -2))
+}))
+S$sens_min <- min(sens$zm); S$sens_max <- max(sens$zm)
+knitr::kable(sens[, -"zm"], align = c("l", "r", "r", "r", "r", "r"))
+```
+
+*Lecture* : avec le plafond de 50 %, la zone métropolitaine compte `r sens[2][["Zone métrop. (hab.)"]]` habitants. PaP : Port-au-Prince ; CdB : Croix-des-Bouquets. Axes routiers (scénario central) : l'excédent de Gressier va à Carrefour et à la section de Martissant de Port-au-Prince, celui de Mirebalais à toutes les communes de provenance sauf Delmas, Tabarre et Pétion-Ville ; les variantes attribuent tous les départs de Port-au-Prince à l'excédent de Gressier, ou l'excédent de Mirebalais à Croix-des-Bouquets ; les règles « zone métropolitaine » répartissent l'excédent entre les communes de la zone au prorata de leurs départs (sauf Delmas et Pétion-Ville) ou de leur population. Carrefour et Croix-des-Bouquets : variation de la population par rapport à la population de base. *Champ* : 140 communes ; zone métropolitaine au sens de la DTM. *Sources* : OIM, DTM (*round* 14) ; IHSI ; WorldPop R2025A ; calculs des auteurs.
+
+Selon le plafond et la règle de réattribution (@tbl-sensibilite), la population corrigée de la zone métropolitaine se situe entre `r fmt(S$sens_min / 1e6, 2)` et `r millions(S$sens_max)` d'habitants, contre `r millions(S$zmpp_ref)` avant les déplacements. La règle de réattribution change surtout la répartition de la perte entre Port-au-Prince, Carrefour et Croix-des-Bouquets ; le scénario de surcomptage donne la borne basse de la perte.
+
+# Populations corrigées par commune {#sec-annexe-populations .appendix}
+
+```{r}
+#| label: tbl-populations
+#| tbl-colwidths: [15, 20, 10, 11, 20, 10, 14]
+#| tbl-cap: "Populations corrigées des déplacements par commune, juillet 2026 (scénario central et enveloppe globale)"
+
+pub <- cd[order(departement, -pop0), .(Département = ifelse(duplicated(departement), "", sub("Grande'Anse", "Grand'Anse", departement)),
+  Commune = commune, Base = fmt(pop0 / 1e3, 1), Corrigée = fmt(pop_B / 1e3, 1),
+  Enveloppe = paste0(fmt(env_min / 1e3, 1), " – ", fmt(env_max / 1e3, 1)), Variation = sgn(var_B),
+  `Densité (hab./km²)` = fmt(pop_B / km2_ihsi, 0))]
+knitr::kable(pub, row.names = FALSE, align = c("l", "l", "r", "r", "r", "r", "r"))
+```
+
+*Lecture* : populations en milliers d'habitants ; la population corrigée de chaque commune est celle du scénario central ; l'enveloppe donne le minimum et le maximum obtenus sur l'ensemble des hypothèses de la @sec-incertitude. *Champ* : 140 communes, classées par département puis par population de base. *Sources* : OIM, DTM (*rounds* 10 à 14) ; IHSI ; calculs des auteurs. Fichiers complets, avec les sections communales : `populations_communes_juillet2026.csv` et `populations_sections_juillet2026.csv`.

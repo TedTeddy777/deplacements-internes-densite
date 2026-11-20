@@ -1,0 +1,231 @@
+/* ===========================================================
+   Industry — steel-blue wireframe design system
+   Barlow / Barlow Condensed, blueprint-framed figures & tables
+   =========================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;1,400&family=Barlow+Condensed:wght@500;600;700&display=swap");
+
+:root {
+  --color-bg:          #ffffff;
+  --color-surface:      #f4f7f9;
+  --color-text:         #1c2a33;
+  --color-text-muted:   #5b6b76;
+  --color-divider:      #c9d4da;
+  --color-accent:       #2f6690;
+  --color-accent-700:   #204a68;
+  --color-accent-100:   #e4edf3;
+  --font-heading: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body:    "Barlow", "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg:        #12181d;
+    --color-surface:    #1a232a;
+    --color-text:       #dbe4ea;
+    --color-text-muted: #8fa0ab;
+    --color-divider:    #33434e;
+    --color-accent:     #6ba3c9;
+    --color-accent-700: #8fbfdf;
+    --color-accent-100: #1e2c36;
+  }
+}
+
+/* ---------- base ---------- */
+html, body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4, h5, h6,
+.title, .subtitle {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: var(--color-text);
+}
+
+.title {
+  font-size: 34px;
+  line-height: 1.15;
+}
+
+.subtitle {
+  font-family: var(--font-body);
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+a { color: var(--color-accent-700); }
+a:hover { color: var(--color-accent); }
+
+code, pre {
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+}
+
+/* ---------- table of contents ---------- */
+#TOC, nav[role="doc-toc"], .toc-active {
+  font-family: var(--font-heading);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+
+#TOC .toc-section-number, nav[role="doc-toc"] .toc-section-number {
+  color: var(--color-accent);
+}
+
+/* ---------- section numbers ---------- */
+.header-section-number {
+  color: var(--color-accent);
+  font-family: var(--font-heading);
+}
+
+/* ---------- tables ---------- */
+table, .table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  margin: 12px 0 20px;
+}
+
+.table thead th, table thead th {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-size: 12px;
+  color: var(--color-bg);
+  background: var(--color-accent-700);
+  border: 1px solid var(--color-accent-700);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.table tbody td, table tbody td {
+  border: 1px solid var(--color-divider);
+  padding: 7px 10px;
+}
+
+.table tbody tr:nth-child(even), table tbody tr:nth-child(even) {
+  background: var(--color-surface);
+}
+
+.tbl-cap {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--color-accent-700);
+  margin: 16px 0 6px;
+}
+
+/* ---------- blueprint figure/table frame ---------- */
+.bp {
+  position: relative;
+  border: 1px solid var(--color-divider);
+  padding: 16px;
+  margin: 20px 0;
+  background: var(--color-surface);
+}
+
+.bp > .corner {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.bp > .corner::before {
+  content: "";
+  position: absolute;
+  left: 5px; top: 0;
+  width: 1px; height: 100%;
+  background: currentColor;
+}
+.bp > .corner::after {
+  content: "";
+  position: absolute;
+  top: 5px; left: 0;
+  width: 100%; height: 1px;
+  background: currentColor;
+}
+.bp > .tl { top: -6px; left: -6px; }
+.bp > .tr { top: -6px; right: -6px; }
+.bp > .bl { bottom: -6px; left: -6px; }
+.bp > .br { bottom: -6px; right: -6px; }
+
+/* ---------- tags / badges (evidence tiers, etc.) ---------- */
+.tag {
+  display: inline-block;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent-700);
+  background: var(--color-accent-100);
+}
+
+/* ---------- code blocks ---------- */
+pre {
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: 0;
+  padding: 14px 16px;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+code {
+  background: var(--color-accent-100);
+  padding: 1px 4px;
+  font-size: .9em;
+}
+pre code { background: transparent; padding: 0; }
+
+/* ---------- blockquotes ---------- */
+blockquote {
+  border-left: 3px solid var(--color-accent);
+  margin: 16px 0;
+  padding: 4px 16px;
+  color: var(--color-text-muted);
+}
+
+/* ---------- bandeau de titre : densité corrigée en arrière-plan ---------- */
+#title-block-header {
+  position: relative;
+  isolation: isolate;
+  padding: 2rem 1rem clamp(9rem, 28vw, 17rem);
+  margin-bottom: 2.5rem;
+  border-bottom: 3px solid #e34948;
+}
+#title-block-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: url("figures/couverture_bandeau.jpg") center bottom / cover no-repeat;
+}
+#title-block-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(to bottom, var(--color-bg) 0%,
+              color-mix(in srgb, var(--color-bg) 65%, transparent) 38%, transparent 68%);
+}
+@media (prefers-color-scheme: dark) {
+  #title-block-header::before { filter: invert(1) hue-rotate(180deg) brightness(.9); }
+}
+
+/* Listes à tirets courts, comme dans le PDF */
+main ul > li::marker { content: "\2013\00a0\00a0"; }
+
+/* Cadres (résumé, abstract, encadré 4.2) : fond, bordure, titre à cheval sur le filet supérieur */
+.cadre, .encadre { background: #f3f5f8; border: 1px solid #2e3a4b; border-radius: 3px; padding: 0 1.2em 0.7em; margin: 2.2em 0 1.4em; font-size: 0.94em; }
+.cadre > div:first-child, .encadre > div:first-child { margin: 0 0 0.3em; transform: translateY(-50%); }
+.cadre > div:first-child p, .encadre > div:first-child p { display: inline-block; margin: 0; padding: 0.2em 0.8em; border-radius: 2px;
+  background: #2e3a4b; color: #fff; font-weight: 700; font-size: 0.86em; letter-spacing: 0.02em; }

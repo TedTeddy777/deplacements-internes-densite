@@ -1,0 +1,15 @@
+# Retours des relecteurs : non publiés
+Plan de corrections*.md
+revisions.md
+
+# GEDEvent_v26_1.csv (274 Mo, au-delà de la limite de 100 Mo de GitHub).
+# scripts/01_preparation_donnees.R le regénère à partir de data/brut/ucdp/ged261-csv.zip.
+data/brut/ucdp/ged261/
+
+# Fichiers parasites de R et de Quarto
+Rplots.pdf
+.Rhistory
+.RData
+.Rproj.user/
+.quarto/
+*_files/
